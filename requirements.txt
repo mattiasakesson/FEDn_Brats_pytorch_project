@@ -1,0 +1,8 @@
+numpy
+Pillow
+fire==0.3.1
+nibabel
+temp
+python-time
+matplotlib
+monai
