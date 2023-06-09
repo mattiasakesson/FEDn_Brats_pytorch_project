@@ -4,7 +4,10 @@ import sys
 import fire
 import yaml
 import json
+#from fedn.utils.helpers import get_helper
 from fedn.utils.pytorchhelper import PytorchHelper
+
+import collections
 import os
 import shutil
 import tempfile
@@ -40,33 +43,110 @@ from monai.transforms import (
 from monai.utils import set_determinism
 
 import torch
+from collections import OrderedDict
+
+#HELPER_MODULE = 'pytorchhelper'
+
+def init_seed(out_path='seed.npz', device=None):
+    # Init and save
+    model = _compile_model(device)
+    _save_model(model, out_path)
 
 
-def init_seed():
+def _save_model(model, out_path):
+    weights = model.state_dict()
+    weights_np = collections.OrderedDict()
+    print("save model")
+    for w in weights:
+        print("layer: ", w)
+        weights_np[w] = weights[w].cpu().detach().numpy()
+    #helper = get_helper(HELPER_MODULE)
+    helper = PytorchHelper()
+    helper.save_model(weights_np, out_path)
 
-    return 0
 
-def init_seed(out_path='seed.npz'):
+def _load_model(model_path, device=None):
+    #import fedn
+    #helper = get_helper(HELPER_MODULE)
+    #helper = fedn.utils.helpers.get_helper('pytorchhelper')
+    helper = PytorchHelper()
 
-    return 0
+
+
+
+    weights_np = helper.load_model(model_path)
+    weights = collections.OrderedDict()
+    print("model weights list: ")
+    for w in weights_np:
+        print("layer: ", w)
+        weights[w] = torch.tensor(weights_np[w])
+    model = _compile_model(device)
+    model.load_state_dict(weights)
+    model.eval()
+    return model
+
+def _compile_model(device=None):
+    VAL_AMP = True
+
+    # standard PyTorch program style: create SegResNet, DiceLoss and Adam optimizer
+
+    model = SegResNet(
+        blocks_down=[1, 2, 2, 4],
+        blocks_up=[1, 1, 1],
+        init_filters=8,#16,
+        in_channels=4,
+        out_channels=3,
+        dropout_prob=0.2,
+    ).to(device)
+
+
+    # define inference method
+    def inference(input):
+        def _compute(input):
+            return sliding_window_inference(
+                inputs=input,
+                roi_size=(240, 240, 160),
+                sw_batch_size=1,
+                predictor=model,
+                overlap=0.5,
+            )
+
+        if VAL_AMP:
+            with torch.cuda.amp.autocast():
+                return _compute(input)
+        else:
+            return _compute(input)
+
+
+    return model
 
 
 def train(in_model_path, out_model_path, data_path='/var/data'):
 
+    #b = np.load(in_model_path)
+    #weights_np = OrderedDict()
+    #for i in b.files:
+    #    print("layer: ", i)
+    #    weights_np[i] = b[i]
 
-    print("listdir var")
-    for f in os.listdir('/var'):
-        nf = os.path.join('/var',f)
-        print(nf, " - ", os.path.exists(nf), os.path.isfile(nf), os.path.isdir(nf))
-        print(f, " - ", os.path.exists(f), os.path.isfile(f), os.path.isdir(f))
+    #print("listdir var")
+    #for f in os.listdir('/var'):
+        #nf = os.path.join('/var',f)
+        #print(nf, " - ", os.path.exists(nf), os.path.isfile(nf), os.path.isdir(nf))
+        #print(f, " - ", os.path.exists(f), os.path.isfile(f), os.path.isdir(f))
 
         #print(f, " - ", nf, " - ", os.path.isfile(nf), os.path.isfile(f))
-
+    '''
     with open('/var/client_settings.yaml', 'r') as fh:
         try:
             settings = dict(yaml.safe_load(fh))
         except yaml.YAMLError as e:
             raise
+    '''
+
+    device = torch.device("cuda:0")
+    print("Load data")
+
 
 
     # Load data
@@ -92,7 +172,8 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
             RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
         ]
     )
-
+    print("is data_path a directory: ", os.path.isdir(data_path))
+    print("data_path: ", data_path)
     train_ds = DecathlonDataset(
         root_dir=data_path,
         task="Task01_BrainTumour",
@@ -104,59 +185,29 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
     )
     train_loader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4)
 
-
-
+    print("Load model")
     # Load model
-    helper = PytorchHelper()
-    weights = helper.load_model(in_model_path)
-
+    model= _load_model(in_model_path, device)
+    # use amp to accelerate training
+    scaler = torch.cuda.amp.GradScaler()
+    # enable cuDNN benchmark
+    torch.backends.cudnn.benchmark = True
 
     # Train
-
-    max_epochs = 300
+    print("Train")
+    epochs = 1
     val_interval = 1
-    VAL_AMP = True
 
-    # standard PyTorch program style: create SegResNet, DiceLoss and Adam optimizer
-    device = torch.device("cuda:0")
-    model = SegResNet(
-        blocks_down=[1, 2, 2, 4],
-        blocks_up=[1, 1, 1],
-        init_filters=16,
-        in_channels=4,
-        out_channels=3,
-        dropout_prob=0.2,
-    ).to(device)
+
     loss_function = DiceLoss(smooth_nr=0, smooth_dr=1e-5, squared_pred=True, to_onehot_y=False, sigmoid=True)
     optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
+    #lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     dice_metric = DiceMetric(include_background=True, reduction="mean")
     dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
 
     post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
-    # define inference method
-    def inference(input):
-        def _compute(input):
-            return sliding_window_inference(
-                inputs=input,
-                roi_size=(240, 240, 160),
-                sw_batch_size=1,
-                predictor=model,
-                overlap=0.5,
-            )
-
-        if VAL_AMP:
-            with torch.cuda.amp.autocast():
-                return _compute(input)
-        else:
-            return _compute(input)
-
-    # use amp to accelerate training
-    scaler = torch.cuda.amp.GradScaler()
-    # enable cuDNN benchmark
-    torch.backends.cudnn.benchmark = True
     best_metric = -1
     best_metric_epoch = -1
     best_metrics_epochs_and_time = [[], [], []]
@@ -167,12 +218,12 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
     metric_values_et = []
     print("Placeholder for training")
     # UNCOMMENT THIS LINES FOR REAL TRAINING
-    '''
+
     total_start = time.time()
-    for epoch in range(max_epochs):
+    for epoch in range(epochs):
         epoch_start = time.time()
         print("-" * 10)
-        print(f"epoch {epoch + 1}/{max_epochs}")
+        print(f"epoch {epoch + 1}/{epochs}")
         model.train()
         epoch_loss = 0
         step = 0
@@ -196,61 +247,19 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
                 f", train_loss: {loss.item():.4f}"
                 f", step time: {(time.time() - step_start):.4f}"
             )
-        lr_scheduler.step()
+        #lr_scheduler.step()
         epoch_loss /= step
         epoch_loss_values.append(epoch_loss)
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
     
-        if (epoch + 1) % val_interval == 0:
-            model.eval()
-            with torch.no_grad():
-                for val_data in val_loader:
-                    val_inputs, val_labels = (
-                        val_data["image"].to(device),
-                        val_data["label"].to(device),
-                    )
-                    val_outputs = inference(val_inputs)
-                    val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
-                    dice_metric(y_pred=val_outputs, y=val_labels)
-                    dice_metric_batch(y_pred=val_outputs, y=val_labels)
-    
-                metric = dice_metric.aggregate().item()
-                metric_values.append(metric)
-                metric_batch = dice_metric_batch.aggregate()
-                metric_tc = metric_batch[0].item()
-                metric_values_tc.append(metric_tc)
-                metric_wt = metric_batch[1].item()
-                metric_values_wt.append(metric_wt)
-                metric_et = metric_batch[2].item()
-                metric_values_et.append(metric_et)
-                dice_metric.reset()
-                dice_metric_batch.reset()
-    
-                if metric > best_metric:
-                    best_metric = metric
-                    best_metric_epoch = epoch + 1
-                    best_metrics_epochs_and_time[0].append(best_metric)
-                    best_metrics_epochs_and_time[1].append(best_metric_epoch)
-                    best_metrics_epochs_and_time[2].append(time.time() - total_start)
-                    torch.save(
-                        model.state_dict(),
-                        os.path.join(root_dir, "best_metric_model.pth"),
-                    )
-                    print("saved new best metric model")
-                print(
-                    f"current epoch: {epoch + 1} current mean dice: {metric:.4f}"
-                    f" tc: {metric_tc:.4f} wt: {metric_wt:.4f} et: {metric_et:.4f}"
-                    f"\nbest mean dice: {best_metric:.4f}"
-                    f" at epoch: {best_metric_epoch}"
-                )
+
         print(f"time consuming of epoch {epoch + 1} is: {(time.time() - epoch_start):.4f}")
     total_time = time.time() - total_start
     
-    '''
-    weights = 
-    # Save
 
-    helper.save_model(weights, out_model_path)
+
+    # Save
+    _save_model(model, out_model_path)
 
 
 
