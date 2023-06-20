@@ -1,5 +1,5 @@
 
 batch_size: 1
-local_epochs: 0
+local_epochs: 1
 training_dataset: 'TCGA_14'
 validation_dataset: 'TCGA_14'
