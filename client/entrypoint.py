@@ -12,7 +12,9 @@ import os
 import shutil
 import tempfile
 import time
-import matplotlib.pyplot as plt
+from torch.utils.data import Dataset
+from data_clients_brats2020 import get_clients
+
 from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader, decollate_batch
@@ -58,7 +60,7 @@ def _save_model(model, out_path):
     weights_np = collections.OrderedDict()
     print("save model")
     for w in weights:
-        print("layer: ", w)
+        #print("layer: ", w)
         weights_np[w] = weights[w].cpu().detach().numpy()
     #helper = get_helper(HELPER_MODULE)
     helper = PytorchHelper()
@@ -76,17 +78,36 @@ def _load_model(model_path, device=None):
 
     weights_np = helper.load_model(model_path)
     weights = collections.OrderedDict()
-    print("model weights list: ")
+    #print("model weights list: ")
     for w in weights_np:
-        print("layer: ", w)
+    #    print("layer: ", w)
         weights[w] = torch.tensor(weights_np[w])
     model = _compile_model(device)
     model.load_state_dict(weights)
     model.eval()
     return model
 
-def _compile_model(device=None):
+# define inference method
+def inference(input, model):
+
     VAL_AMP = True
+    def _compute(input):
+        return sliding_window_inference(
+            inputs=input,
+            roi_size=(240, 240, 160),
+            sw_batch_size=1,
+            predictor=model,
+            overlap=0.5,
+        )
+
+    if VAL_AMP:
+        with torch.cuda.amp.autocast():
+            return _compute(input)
+    else:
+        return _compute(input)
+
+def _compile_model(device=None):
+
 
     # standard PyTorch program style: create SegResNet, DiceLoss and Adam optimizer
 
@@ -100,22 +121,7 @@ def _compile_model(device=None):
     ).to(device)
 
 
-    # define inference method
-    def inference(input):
-        def _compute(input):
-            return sliding_window_inference(
-                inputs=input,
-                roi_size=(240, 240, 160),
-                sw_batch_size=1,
-                predictor=model,
-                overlap=0.5,
-            )
 
-        if VAL_AMP:
-            with torch.cuda.amp.autocast():
-                return _compute(input)
-        else:
-            return _compute(input)
 
 
     return model
@@ -123,26 +129,16 @@ def _compile_model(device=None):
 
 def train(in_model_path, out_model_path, data_path='/var/data'):
 
-    #b = np.load(in_model_path)
-    #weights_np = OrderedDict()
-    #for i in b.files:
-    #    print("layer: ", i)
-    #    weights_np[i] = b[i]
+    #Uncomment for client specific settings
 
-    #print("listdir var")
-    #for f in os.listdir('/var'):
-        #nf = os.path.join('/var',f)
-        #print(nf, " - ", os.path.exists(nf), os.path.isfile(nf), os.path.isdir(nf))
-        #print(f, " - ", os.path.exists(f), os.path.isfile(f), os.path.isdir(f))
-
-        #print(f, " - ", nf, " - ", os.path.isfile(nf), os.path.isfile(f))
-    '''
     with open('/var/client_settings.yaml', 'r') as fh:
         try:
-            settings = dict(yaml.safe_load(fh))
+            client_settings = dict(yaml.safe_load(fh))
         except yaml.YAMLError as e:
             raise
-    '''
+    batch_size = client_settings['batch_size']
+    local_epochs = client_settings['local_epochs']
+
 
     device = torch.device("cuda:0")
     print("Load data")
@@ -172,18 +168,21 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
             RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
         ]
     )
-    print("is data_path a directory: ", os.path.isdir(data_path))
-    print("data_path: ", data_path)
-    train_ds = DecathlonDataset(
-        root_dir=data_path,
-        task="Task01_BrainTumour",
-        transform=train_transform,
-        section="training",
-        download=True,
-        cache_rate=0.0,
-        num_workers=4,
-    )
-    train_loader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4)
+
+    image_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'images'))
+    label_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'labels'))
+
+    print("image_files:")
+    for r in image_files:
+        print(r)
+    print("-- -- -- --")
+    print("data path: ", data_path)
+    train_ds = BratsDataset(root_dir=data_path,
+                            transform=train_transform,
+                            image_files=image_files,
+                            label_files=label_files)
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
 
     print("Load model")
     # Load model
@@ -195,7 +194,7 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
 
     # Train
     print("Train")
-    epochs = 1
+    #epochs = 1
     val_interval = 1
 
 
@@ -203,27 +202,15 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
     optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
     #lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
-    dice_metric = DiceMetric(include_background=True, reduction="mean")
-    dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
 
-    post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
-
-    best_metric = -1
-    best_metric_epoch = -1
-    best_metrics_epochs_and_time = [[], [], []]
-    epoch_loss_values = []
-    metric_values = []
-    metric_values_tc = []
-    metric_values_wt = []
-    metric_values_et = []
     print("Placeholder for training")
     # UNCOMMENT THIS LINES FOR REAL TRAINING
 
     total_start = time.time()
-    for epoch in range(epochs):
+    for epoch in range(local_epochs):
         epoch_start = time.time()
         print("-" * 10)
-        print(f"epoch {epoch + 1}/{epochs}")
+        print(f"epoch {epoch + 1}/{local_epochs}")
         model.train()
         epoch_loss = 0
         step = 0
@@ -247,38 +234,89 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
                 f", train_loss: {loss.item():.4f}"
                 f", step time: {(time.time() - step_start):.4f}"
             )
-        #lr_scheduler.step()
-        epoch_loss /= step
-        epoch_loss_values.append(epoch_loss)
-        print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
-    
 
-        print(f"time consuming of epoch {epoch + 1} is: {(time.time() - epoch_start):.4f}")
     total_time = time.time() - total_start
     
 
 
     # Save
     _save_model(model, out_model_path)
+    print("Model training done!")
 
 
 
 def validate(in_model_path, out_json_path, data_path='/var/data'):
 
+
     with open('/var/client_settings.yaml', 'r') as fh:
+    #with open('client_settings.yaml', 'r') as fh:
+
         try:
-            settings = dict(yaml.safe_load(fh))
+            client_settings = dict(yaml.safe_load(fh))
         except yaml.YAMLError as e:
             raise
+    batch_size = client_settings['batch_size']
 
-
+    device = torch.device("cuda:0")
 
     # Load data
 
-    helper = PytorchHelper()
-    weights = helper.load_model(in_model_path)
+    val_transform = Compose(
+        [
+            LoadImaged(keys=["image", "label"]),
+            EnsureChannelFirstd(keys="image"),
+            EnsureTyped(keys=["image", "label"]),
+            ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
+            Orientationd(keys=["image", "label"], axcodes="RAS"),
+            Spacingd(
+                keys=["image", "label"],
+                pixdim=(1.0, 1.0, 1.0),
+                mode=("bilinear", "nearest"),
+            ),
+            NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+        ]
+    )
 
-    results = {'testspace': 0.5}
+    image_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'images'))
+    label_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'labels'))
+
+    val_ds = BratsDataset(root_dir=data_path, transform=val_transform, image_files=image_files,
+                          label_files=label_files)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=True, num_workers=4)
+
+    model = _load_model(in_model_path, device)
+    # use amp to accelerate training
+    scaler = torch.cuda.amp.GradScaler()
+    # enable cuDNN benchmark
+    torch.backends.cudnn.benchmark = True
+    post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+    dice_metric = DiceMetric(include_background=True, reduction="mean")
+    dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
+    model.eval()
+    with torch.no_grad():
+        i = 1
+        for val_data in val_loader:
+            print("r i: ", i)
+            print("type val_data: ", type(val_data))
+            i += 1
+            val_inputs, val_labels = (
+                val_data["image"].to(device),
+                val_data["label"].to(device),
+            )
+            val_outputs = inference(val_inputs, model)
+            val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
+            dice_metric(y_pred=val_outputs, y=val_labels)
+            dice_metric_batch(y_pred=val_outputs, y=val_labels)
+
+
+        metric = dice_metric.aggregate().item()
+        metric_batch = dice_metric_batch.aggregate()
+        metric_tc = metric_batch[0].item()
+        metric_wt = metric_batch[1].item()
+        metric_et = metric_batch[2].item()
+
+
+    results = {'mean dice': metric, 'dice tc': metric_tc, 'dice wt': metric_wt, 'dice et': metric_et}
 
 
 
@@ -312,6 +350,39 @@ class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
             result.append(d[key] == 2)
             d[key] = torch.stack(result, axis=0).float()
         return d
+
+
+class BratsDataset(Dataset):
+    def __init__(self, root_dir, transform=None, image_files=None, label_files=None):
+        self.root_dir = root_dir
+        self.transform = transform
+        self.image_dir = os.path.join(self.root_dir, "images")
+        self.label_dir = os.path.join(self.root_dir, "labels")
+        if image_files and label_files:
+
+            print("if")
+            self.image_files = sorted(image_files)
+            self.label_files = sorted(label_files)
+        else:
+
+            self.image_files = sorted(os.listdir(self.image_dir))
+            self.label_files = sorted(os.listdir(self.label_dir))
+        for ir, lr in zip(self.image_files, self.label_files):
+            print(ir, " - ", lr)
+        assert len(self.image_files) == len(self.label_files), "Number of image files and label files do not match."
+
+    def __len__(self):
+        return len(self.image_files)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        image_file = os.path.join(self.image_dir, self.image_files[idx])
+        label_file = os.path.join(self.label_dir, self.label_files[idx])
+        sample = {"image": image_file, "label": label_file}
+        if self.transform:
+            sample = self.transform(sample)
+        return sample
 
 if __name__ == '__main__':
     fire.Fire({
