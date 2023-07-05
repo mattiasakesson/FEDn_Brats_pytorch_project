@@ -12,6 +12,7 @@ ARG BASE_IMG=tensorflow/tensorflow:devel-gpu
 FROM $BASE_IMG
 ARG REQUIREMENTS=requirements.txt
 COPY $REQUIREMENTS /app/config/requirements.txt
+COPY fedn /app/fedn
 
 # Create FEDn app directory
 RUN mkdir -p /app \
@@ -31,7 +32,7 @@ RUN mkdir -p /app \
   # Install FEDn and requirements
   && python3 -m venv /venv \
   && /venv/bin/pip install --upgrade pip \
-  && /venv/bin/pip install --no-cache-dir -e git+https://github.com/scaleoutsystems/fedn.git@develop#egg=fedn\&subdirectory=fedn \
+  && /venv/bin/pip install --editable /app/fedn/fedn \
   && /venv/bin/pip install --no-cache-dir -r /app/config/requirements.txt
 # Setup working directory
 WORKDIR /app

@@ -5,7 +5,8 @@ import fire
 import yaml
 import json
 #from fedn.utils.helpers import get_helper
-from fedn.utils.pytorchhelper import PytorchHelper
+#from fedn.utils.pytorchhelper import PytorchHelper
+from fedn.utils.helpers import get_helper, save_metadata, save_metrics
 
 import collections
 import os
@@ -46,8 +47,7 @@ from monai.utils import set_determinism
 
 import torch
 from collections import OrderedDict
-
-#HELPER_MODULE = 'pytorchhelper'
+HELPER_MODULE = 'pytorchhelper'
 
 def init_seed(out_path='seed.npz', device=None):
     # Init and save
@@ -58,33 +58,25 @@ def init_seed(out_path='seed.npz', device=None):
 def _save_model(model, out_path):
     weights = model.state_dict()
     weights_np = collections.OrderedDict()
-    print("save model")
     for w in weights:
-        #print("layer: ", w)
         weights_np[w] = weights[w].cpu().detach().numpy()
-    #helper = get_helper(HELPER_MODULE)
-    helper = PytorchHelper()
-    helper.save_model(weights_np, out_path)
+
+    helper = get_helper(HELPER_MODULE)
+    helper.save(weights_np, out_path)
 
 
 def _load_model(model_path, device=None):
-    #import fedn
-    #helper = get_helper(HELPER_MODULE)
-    #helper = fedn.utils.helpers.get_helper('pytorchhelper')
-    helper = PytorchHelper()
 
-
-
-
-    weights_np = helper.load_model(model_path)
+    helper = get_helper(HELPER_MODULE)
+    weights_np = helper.load(model_path)
     weights = collections.OrderedDict()
-    #print("model weights list: ")
     for w in weights_np:
-    #    print("layer: ", w)
         weights[w] = torch.tensor(weights_np[w])
+
     model = _compile_model(device)
     model.load_state_dict(weights)
     model.eval()
+
     return model
 
 # define inference method
@@ -130,8 +122,11 @@ def _compile_model(device=None):
 def train(in_model_path, out_model_path, data_path='/var/data'):
 
     #Uncomment for client specific settings
+    print("test train run /Mattias Åkesson")
 
     with open('/var/client_settings.yaml', 'r') as fh:
+    #with open('client_settings.yaml', 'r') as fh:
+
         try:
             client_settings = dict(yaml.safe_load(fh))
         except yaml.YAMLError as e:
@@ -141,7 +136,7 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
 
 
     device = torch.device("cuda:0")
-    print("Load data")
+    print("Load data -- update")
 
 
 
@@ -236,8 +231,17 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
             )
 
     total_time = time.time() - total_start
-    
 
+    # Metadata needed for aggregation server side. DUMMY VALUES!
+    metadata = {
+        'num_examples': 1000,
+        'batch_size': 1,
+        'epochs': 1,
+        'lr': 0.001
+    }
+
+    # Save JSON metadata file
+    save_metadata(metadata, out_model_path)
 
     # Save
     _save_model(model, out_model_path)
@@ -247,7 +251,7 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
 
 def validate(in_model_path, out_json_path, data_path='/var/data'):
 
-
+    print("test val run /Mattias Åkesson")
     with open('/var/client_settings.yaml', 'r') as fh:
     #with open('client_settings.yaml', 'r') as fh:
 
@@ -316,15 +320,11 @@ def validate(in_model_path, out_json_path, data_path='/var/data'):
         metric_et = metric_batch[2].item()
 
 
-    results = {'mean dice': metric, 'dice tc': metric_tc, 'dice wt': metric_wt, 'dice et': metric_et}
-
-
+    results = {'meandice': metric, 'dicetc': metric_tc, 'dicewt': metric_wt, 'diceet': metric_et, 'newtestkey': 17.0}
 
     # Save JSON
-    with open(out_json_path, "w") as fh:
-        fh.write(json.dumps(results))
+    save_metrics(results, out_json_path)
 
-    return 0
 
 
 class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
