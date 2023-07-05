@@ -234,7 +234,7 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
 
     # Metadata needed for aggregation server side. DUMMY VALUES!
     metadata = {
-        'num_examples': 1000,
+        'num_examples': len(train_ds),
         'batch_size': 1,
         'epochs': 1,
         'lr': 0.001
