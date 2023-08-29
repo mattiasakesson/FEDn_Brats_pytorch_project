@@ -34,4 +34,3 @@ singularity build bratspytorch.sif docker://mattiasakessons/bratspytorch:latest
 ```
 
 
-## Customize docker image
