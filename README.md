@@ -1,7 +1,8 @@
 # FEDn Brats pytorch project
 
 ## Pre-process data
-YOU NEED TO HAVE THE BRATS_2020 DATASET ON YOUR MACHINE! ELSE CONTACT ANDERS.
+YOU NEED TO HAVE THE BRATS_2020 DATASET ON YOUR MACHINE! ELSE CONTACT ANDERS. \
+Change: <PATH/TO/DATA> to the location you have your data and: <NEW/DATA/PATH>  to the location you wish to store the transformed data.
 
 
 ```console
@@ -16,7 +17,8 @@ make sure you have a correct client certificate for current federation (usully n
 
 ### Using docker image
 
-change <PATH_TO_YOUR_DATA> to the data path of your local data
+Change <NEW/DATA/PATH> to the data path of your local data. \
+Make sure your client yaml file is named: client.yaml
 
 
 ```console
