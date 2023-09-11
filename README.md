@@ -22,20 +22,20 @@ Make sure your client yaml file is named: client.yaml
 
 
 ```console
-docker run --gpus '"device=0"' \
+docker run --gpus all --shm-size=32gb \
 -v $PWD/client.yaml:/app/client.yaml \
 -v <NEW/DATA/PATH>:/var/data \
 -v $PWD/client_settings.yaml:/var/client_settings.yaml \
 -e ENTRYPOINT_OPTS=--data_path=/var/data/ \
-mattiasakesson/assist_dockerimage /venv/bin/fedn run client --secure=True --force-ssl -in client.yaml \
+mattiasakessons/pytorchtest run client --secure=True --force-ssl -in client.yaml
 ```
-The docker image: mattiasakesson/assist_dockerimage was recently updated so if you have run this client-server before you need to remove the docker image or add the --build flag to the script.
+
 ### Using singularity
 
 Transform the docker image into singularity
 
 ```console
-singularity build bratspytorch.sif docker://mattiasakessons/bratspytorch:latest
+singularity build bratspytorch.sif mattiasakessons/pytorchtest:latest
 ```
 
 
