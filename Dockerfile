@@ -1,6 +1,7 @@
 # Base image
 #ARG BASE_IMG=nvidia/cuda:11.6.0-devel-ubuntu20.04
 ARG BASE_IMG=pytorch/pytorch
+#ARG BASE_IMG=python:3.9-slim
 FROM $BASE_IMG
 
 # Requirements (use MNIST Keras as default)
@@ -8,8 +9,8 @@ ARG REQUIREMENTS=requirements.txt
 
 # Add FEDn and default configs
 #COPY fedn /app/fedn
-ARG BASE_IMG=tensorflow/tensorflow:devel-gpu
-FROM $BASE_IMG
+#ARG BASE_IMG=tensorflow/tensorflow:devel-gpu
+#FROM $BASE_IMG
 ARG REQUIREMENTS=requirements.txt
 COPY $REQUIREMENTS /app/config/requirements.txt
 COPY fedn /app/fedn
@@ -22,7 +23,7 @@ RUN mkdir -p /app \
   && mkdir -p /app/certs \
   # Install venv
   && apt update -y \
-  && apt install -y --no-install-recommends python3.8-venv \
+  && apt install -y --no-install-recommends python3-venv \
   && apt update -y \
   && apt-get -y install git \
   # clean up apt get
