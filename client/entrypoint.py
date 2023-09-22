@@ -7,6 +7,7 @@ import json
 #from fedn.utils.helpers import get_helper
 #from fedn.utils.pytorchhelper import PytorchHelper
 from fedn.utils.helpers import get_helper, save_metadata, save_metrics
+#from fedn.utils.helpers import get_helper
 
 import collections
 import os
@@ -119,13 +120,13 @@ def _compile_model(device=None):
     return model
 
 
-def train(in_model_path, out_model_path, data_path='/var/data'):
+def train(in_model_path, out_model_path, data_path='/var/data'): 
 
     #Uncomment for client specific settings
-    print("test train run /Mattias Åkesson")
+
 
     with open('/var/client_settings.yaml', 'r') as fh:
-    #with open('client_settings.yaml', 'r') as fh:
+    #with open('client_settings.yaml', 'r') as fh: # Used by CJG for local training
 
         try:
             client_settings = dict(yaml.safe_load(fh))
@@ -164,8 +165,11 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
         ]
     )
 
-    image_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'images'))
-    label_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'labels'))
+    #image_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'images'))
+    #label_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'labels'))
+    image_files = [os.path.join('train', 'images', i) for i in os.listdir(os.path.join(data_path, 'train', 'images'))] # Changed by CJG to local data
+    label_files = [os.path.join('train', 'labels', i) for i in os.listdir(os.path.join(data_path, 'train', 'labels'))] # Changed by CJG to local data
+    
 
     print("image_files:")
     for r in image_files:
@@ -251,9 +255,9 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
 
 def validate(in_model_path, out_json_path, data_path='/var/data'):
 
-    print("test val run /Mattias Åkesson")
+
     with open('/var/client_settings.yaml', 'r') as fh:
-    #with open('client_settings.yaml', 'r') as fh:
+    #with open('client_settings.yaml', 'r') as fh: # CJG change
 
         try:
             client_settings = dict(yaml.safe_load(fh))
@@ -281,12 +285,19 @@ def validate(in_model_path, out_json_path, data_path='/var/data'):
         ]
     )
 
-    image_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'images'))
-    label_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'labels'))
+    #image_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'images'))
+    #label_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'labels'))
+    image_files = [os.path.join('val', 'images', i) for i in os.listdir(os.path.join(data_path, 'val', 'images'))] # Changed by CJG to local data
+    label_files = [os.path.join('val', 'labels', i) for i in os.listdir(os.path.join(data_path, 'val', 'labels'))] # Changed by CJG to local data
+    
+    print("val files:")
+    for r in image_files:
+    	print(r)
+        
 
     val_ds = BratsDataset(root_dir=data_path, transform=val_transform, image_files=image_files,
                           label_files=label_files)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=True, num_workers=4)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=4)
 
     model = _load_model(in_model_path, device)
     # use amp to accelerate training
@@ -356,8 +367,10 @@ class BratsDataset(Dataset):
     def __init__(self, root_dir, transform=None, image_files=None, label_files=None):
         self.root_dir = root_dir
         self.transform = transform
-        self.image_dir = os.path.join(self.root_dir, "images")
-        self.label_dir = os.path.join(self.root_dir, "labels")
+        #self.image_dir = os.path.join(self.root_dir, "images")
+        #self.label_dir = os.path.join(self.root_dir, "labels")
+        self.image_dir = os.path.join(self.root_dir) #CJG
+        self.label_dir = os.path.join(self.root_dir)#CJG
         if image_files and label_files:
 
             print("if")
