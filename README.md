@@ -53,7 +53,7 @@ singularity build bratspytorch.sif mattiasakessons/pytorchtest:latest
       - trainsample1label.nii.gz \
       ...
       - trainsample1label.nii.gz \
-  - validate
+  - val
     - images
       - valsample1image.nii.gz \
       ...
