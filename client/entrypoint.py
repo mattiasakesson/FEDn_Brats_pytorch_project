@@ -4,8 +4,7 @@ import sys
 import fire
 import yaml
 import json
-#from fedn.utils.helpers import get_helper
-#from fedn.utils.pytorchhelper import PytorchHelper
+
 from fedn.utils.helpers import get_helper, save_metadata, save_metrics
 #from fedn.utils.helpers import get_helper
 
@@ -76,7 +75,6 @@ def _load_model(model_path, device=None):
 
     model = _compile_model(device)
     model.load_state_dict(weights)
-    model.eval()
 
     return model
 
@@ -109,13 +107,9 @@ def _compile_model(device=None):
         blocks_up=[1, 1, 1],
         init_filters=8,#16,
         in_channels=4,
-        out_channels=3,
+        out_channels=4,
         dropout_prob=0.2,
     ).to(device)
-
-
-
-
 
     return model
 
@@ -135,11 +129,7 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
     batch_size = client_settings['batch_size']
     local_epochs = client_settings['local_epochs']
 
-
     device = torch.device("cuda:0")
-    print("Load data -- update")
-
-
 
     # Load data
     train_transform = Compose(
@@ -173,13 +163,20 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
 
     print("image_files:")
     for r in image_files:
-        print(r)
+        print(r, os.path.isfile(r))
+
+    print("label_files:")
+    for r in label_files:
+        print(r, os.path.isfile(r))
     print("-- -- -- --")
+
     print("data path: ", data_path)
     train_ds = BratsDataset(root_dir=data_path,
                             transform=train_transform,
                             image_files=image_files,
                             label_files=label_files)
+
+
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
 
@@ -191,19 +188,11 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
     # enable cuDNN benchmark
     torch.backends.cudnn.benchmark = True
 
-    # Train
-    print("Train")
-    #epochs = 1
-    val_interval = 1
-
 
     loss_function = DiceLoss(smooth_nr=0, smooth_dr=1e-5, squared_pred=True, to_onehot_y=False, sigmoid=True)
     optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
     #lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
-
-    print("Placeholder for training")
-    # UNCOMMENT THIS LINES FOR REAL TRAINING
 
     total_start = time.time()
     for epoch in range(local_epochs):
@@ -216,6 +205,7 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
         for batch_data in train_loader:
             step_start = time.time()
             step += 1
+
             inputs, labels = (
                 batch_data["image"].to(device),
                 batch_data["label"].to(device),
@@ -289,10 +279,7 @@ def validate(in_model_path, out_json_path, data_path='/var/data'):
     #label_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'labels'))
     image_files = [os.path.join('val', 'images', i) for i in os.listdir(os.path.join(data_path, 'val', 'images'))] # Changed by CJG to local data
     label_files = [os.path.join('val', 'labels', i) for i in os.listdir(os.path.join(data_path, 'val', 'labels'))] # Changed by CJG to local data
-    
-    print("val files:")
-    for r in image_files:
-    	print(r)
+
         
 
     val_ds = BratsDataset(root_dir=data_path, transform=val_transform, image_files=image_files,
@@ -309,11 +296,9 @@ def validate(in_model_path, out_json_path, data_path='/var/data'):
     dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
     model.eval()
     with torch.no_grad():
-        i = 1
+
         for val_data in val_loader:
-            print("r i: ", i)
-            print("type val_data: ", type(val_data))
-            i += 1
+
             val_inputs, val_labels = (
                 val_data["image"].to(device),
                 val_data["label"].to(device),
@@ -326,19 +311,23 @@ def validate(in_model_path, out_json_path, data_path='/var/data'):
 
         metric = dice_metric.aggregate().item()
         metric_batch = dice_metric_batch.aggregate()
-        metric_tc = metric_batch[0].item()
-        metric_wt = metric_batch[1].item()
-        metric_et = metric_batch[2].item()
+        metric_bg = metric_batch[0].item()
+        metric_GTV = metric_batch[1].item()
+        metric_CTV = metric_batch[2].item()
+        metric_Brainstem = metric_batch[3].item()
 
 
-    results = {'meandice': metric, 'dicetc': metric_tc, 'dicewt': metric_wt, 'diceet': metric_et, 'newtestkey': 17.0}
+    results = {'meandice': metric, 'diceBackground': metric_bg, 'diceGTV': metric_GTV, 'diceCTV': metric_CTV, 'diceBrainstem': metric_Brainstem}
+    print("val results: ")
+    for k in results:
+        print(k, ": ", results[k])
 
     # Save JSON
     save_metrics(results, out_json_path)
 
 
 
-class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
+class ConvertToMultiChannelBasedOnBratsClassesd_old(MapTransform):
     """
     Convert labels to multi channels based on brats classes:
     label 1 is the peritumoral edema
@@ -363,6 +352,29 @@ class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
         return d
 
 
+class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
+    """
+    Convert labels to multi channels based on brats classes:
+    label 1 is the peritumoral edema
+    label 2 is the GD-enhancing tumor
+    label 3 is the necrotic and non-enhancing tumor core
+    The possible classes are TC (Tumor core), WT (Whole tumor)
+    and ET (Enhancing tumor).
+
+    """
+
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.keys:
+            result = []
+            result.append(d[key] == 0)
+            result.append(d[key] == 1)
+            result.append(d[key] == 2)
+            result.append(d[key] == 3)
+            d[key] = torch.stack(result, axis=0).float()
+        return d
+
+
 class BratsDataset(Dataset):
     def __init__(self, root_dir, transform=None, image_files=None, label_files=None):
         self.root_dir = root_dir
@@ -373,15 +385,15 @@ class BratsDataset(Dataset):
         self.label_dir = os.path.join(self.root_dir)#CJG
         if image_files and label_files:
 
-            print("if")
+            #print("if")
             self.image_files = sorted(image_files)
             self.label_files = sorted(label_files)
         else:
 
             self.image_files = sorted(os.listdir(self.image_dir))
             self.label_files = sorted(os.listdir(self.label_dir))
-        for ir, lr in zip(self.image_files, self.label_files):
-            print(ir, " - ", lr)
+        #for ir, lr in zip(self.image_files, self.label_files):
+        #    print(ir, " - ", lr)
         assert len(self.image_files) == len(self.label_files), "Number of image files and label files do not match."
 
     def __len__(self):
@@ -392,9 +404,12 @@ class BratsDataset(Dataset):
             idx = idx.tolist()
         image_file = os.path.join(self.image_dir, self.image_files[idx])
         label_file = os.path.join(self.label_dir, self.label_files[idx])
+
         sample = {"image": image_file, "label": label_file}
+
         if self.transform:
             sample = self.transform(sample)
+
         return sample
 
 if __name__ == '__main__':
