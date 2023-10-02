@@ -39,3 +39,37 @@ singularity build bratspytorch.sif mattiasakessons/pytorchtest:latest
 ```
 
 
+# Transform to locally collected hospital data
+
+## Data storing structure
+
+- <DATA/PATH>
+  - train
+    - images
+      - trainsample1image.nii.gz \
+      ...
+      - trainsample1image.nii.gz \
+    - labels
+      - trainsample1label.nii.gz \
+      ...
+      - trainsample1label.nii.gz \
+  - val
+    - images
+      - valsample1image.nii.gz \
+      ...
+      - valsample1image.nii.gz \
+    - labels
+      - valsample1label.nii.gz \
+      ...
+      - valsample1label.nii.gz \
+
+
+
+Name convention of sample pair should start with identifator in name. \
+Example: \
+../images/example23_image.nii.gz \
+../labels/example23_label.nii.gz
+
+
+
+
