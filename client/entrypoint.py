@@ -142,7 +142,7 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
             Orientationd(keys=["image", "label"], axcodes="RAS"),
             Spacingd(
                 keys=["image", "label"],
-                pixdim=(1.0, 1.0, 1.0),
+                pixdim=(1.0, 1.0, 2.0),
                 mode=("bilinear", "nearest"),
             ),
             RandSpatialCropd(keys=["image", "label"], roi_size=[224, 224, 144], random_size=False),
@@ -268,7 +268,7 @@ def validate(in_model_path, out_json_path, data_path='/var/data'):
             Orientationd(keys=["image", "label"], axcodes="RAS"),
             Spacingd(
                 keys=["image", "label"],
-                pixdim=(1.0, 1.0, 1.0),
+                pixdim=(1.0, 1.0, 2.0),
                 mode=("bilinear", "nearest"),
             ),
             NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
@@ -292,7 +292,7 @@ def validate(in_model_path, out_json_path, data_path='/var/data'):
     # enable cuDNN benchmark
     torch.backends.cudnn.benchmark = True
     post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
-    dice_metric = DiceMetric(include_background=True, reduction="mean")
+    dice_metric = DiceMetric(include_background=False, reduction="mean")
     dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
     model.eval()
     with torch.no_grad():
