@@ -39,6 +39,8 @@ from monai.transforms import (
     RandScaleIntensityd,
     RandShiftIntensityd,
     RandSpatialCropd,
+    RandRotate,
+    Rand3DElastic,
     Spacingd,
     EnsureTyped,
     EnsureChannelFirstd,
@@ -145,13 +147,15 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
                 pixdim=(1.0, 1.0, 2.0),
                 mode=("bilinear", "nearest"),
             ),
-            RandSpatialCropd(keys=["image", "label"], roi_size=[224, 224, 144], random_size=False),
+            RandSpatialCropd(keys=["image", "label"], roi_size=[160, 160, 80], random_size=False),
             RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
             RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
             RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
             NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-            RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
-            RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
+            RandScaleIntensityd(keys="image", factors=0.1, prob=0.5),
+            RandShiftIntensityd(keys="image", offsets=0.1, prob=0.5),
+            RandRotate(keys=["image", "label"], prob = 0.25, range_x = 30, range_y = 30, range_z = 30, mode = ("bilinear", "nearest")),
+            Rand3DElastic(keys=["image", "label"], sigma_range=(5,7), magnitude_range=(50,150), prob = 0.5, padding_mode='zeros', mode = ("bilinear", "nearest")),
         ]
     )
 
