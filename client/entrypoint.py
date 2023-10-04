@@ -39,8 +39,8 @@ from monai.transforms import (
     RandScaleIntensityd,
     RandShiftIntensityd,
     RandSpatialCropd,
-    RandRotate,
-    Rand3DElastic,
+    RandRotated,
+    Rand3DElasticd,
     Spacingd,
     EnsureTyped,
     EnsureChannelFirstd,
@@ -87,7 +87,7 @@ def inference(input, model):
     def _compute(input):
         return sliding_window_inference(
             inputs=input,
-            roi_size=(240, 240, 160),
+            roi_size=(176, 176, 96),
             sw_batch_size=1,
             predictor=model,
             overlap=0.5,
@@ -154,8 +154,8 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
             NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
             RandScaleIntensityd(keys="image", factors=0.1, prob=0.5),
             RandShiftIntensityd(keys="image", offsets=0.1, prob=0.5),
-            RandRotate(keys=["image", "label"], prob = 0.25, range_x = 30, range_y = 30, range_z = 30, mode = ("bilinear", "nearest")),
-            Rand3DElastic(keys=["image", "label"], sigma_range=(5,7), magnitude_range=(50,150), prob = 0.5, padding_mode='zeros', mode = ("bilinear", "nearest")),
+            RandRotated(keys=["image", "label"], prob = 0.25, range_x = 30, range_y = 30, range_z = 30, mode = ("bilinear", "nearest")),
+            Rand3DElasticd(keys=["image", "label"], sigma_range=(5,7), magnitude_range=(50,150), prob = 0.5, padding_mode='zeros', mode = ("bilinear", "nearest")),
         ]
     )
 
