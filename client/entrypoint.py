@@ -182,7 +182,7 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
 
 
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=12)
 
     print("Load model")
     # Load model
