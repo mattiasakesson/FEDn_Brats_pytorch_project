@@ -2,7 +2,7 @@
 set -e
 
 # Init seed
-python client/entrypoint.py init_seed
+.assist-pytorch-venv/bin/python3.9 client/entrypoint.py init_seed
 
 # Make compute package
 tar -czvf package.tgz client
