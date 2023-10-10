@@ -71,5 +71,29 @@ Example: \
 ../labels/example23_label.nii.gz
 
 
+# Local Training and Validation
+
+Update the client_setting.yaml:
+- epochs: A sufficient number (1000)
+- experiment_name: Name it related to your workplace/region
+- dataname: Name it related to your workplace/region
+
+
+If you need a virtual environment:
+```console
+bin/init_venv.sh
+```
+## Train
+```console
+.assist-pytorch-venv/bin/python3 localtraining.py train <PATH/TO/DATA>/train
+```
+
+## Validate experiment
+```console
+.assist-pytorch-venv/bin/python3 localtraining.py validate <PATH/TO/DATA>/val
+```
+
+
+
 
 
