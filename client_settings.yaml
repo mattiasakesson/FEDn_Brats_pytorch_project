@@ -3,3 +3,8 @@ batch_size: 1
 local_epochs: 1
 training_dataset: 'TCGA_14'
 validation_dataset: 'TCGA_14'
+
+# Local training setting
+epochs: 3
+experiment_name: 'ScaleoutExperiment'
+dataname: ''

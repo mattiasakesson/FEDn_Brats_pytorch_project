@@ -15,7 +15,8 @@ import sys
 sys.path.append('client')
 
 
-from client.entrypoint import ConvertToMultiChannelBasedOnBratsClassesd, BratsDataset, _compile_model, inference
+from client.entrypoint import (ConvertToMultiChannelBasedOnBratsClassesd, BratsDataset, _compile_model, inference,
+                               get_train_transform, get_val_transform)
 from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader, decollate_batch
@@ -39,6 +40,8 @@ from monai.transforms import (
     RandScaleIntensityd,
     RandShiftIntensityd,
     RandSpatialCropd,
+    RandRotated,
+    Rand3DElasticd,
     Spacingd,
     EnsureTyped,
     EnsureChannelFirstd,
@@ -48,7 +51,8 @@ from monai.utils import set_determinism
 import torch
 
 
-def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata/train'):
+def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata/train',
+          experiment_name='testexperiment'):
 
     with open('client_settings.yaml', 'r') as fh:
 
@@ -56,86 +60,36 @@ def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldat
             client_settings = dict(yaml.safe_load(fh))
         except yaml.YAMLError as e:
             raise
+
     batch_size = client_settings['batch_size']
     epochs = client_settings['epochs']
-
     device = torch.device("cuda:0")
 
-    # Load data
-    train_transform = Compose(
-        [
-            # load 4 Nifti images and stack them together
-            LoadImaged(keys=["image", "label"]),
-            EnsureChannelFirstd(keys="image"),
-            EnsureTyped(keys=["image", "label"]),
-            ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-            Orientationd(keys=["image", "label"], axcodes="RAS"),
-            Spacingd(
-                keys=["image", "label"],
-                pixdim=(1.0, 1.0, 1.0),
-                mode=("bilinear", "nearest"),
-            ),
-            RandSpatialCropd(keys=["image", "label"], roi_size=[224, 224, 144], random_size=False),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
-            NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-            RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
-            RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
-        ]
-    )
-
-    # image_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'images'))
-    # label_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'labels'))
     image_files = [os.path.join('images', i) for i in
                    os.listdir(os.path.join(data_path, 'images'))]  # Changed by CJG to local data
     label_files = [os.path.join('labels', i) for i in
                    os.listdir(os.path.join(data_path, 'labels'))]  # Changed by CJG to local data
 
-    #print("image_files:")
-    #for r in image_files:
-     #   print(r, os.path.isfile(r))
-
-   # print("label_files:")
-   # for r in label_files:
-    #    print(r, os.path.isfile(r))
-    print("-- -- -- --")
-
-    print("data path: ", data_path)
     train_ds = BratsDataset(root_dir=data_path,
-                            transform=train_transform,
+                            transform=get_train_transform(),
                             image_files=image_files,
                             label_files=label_files)
 
-    #train_ds.__getitem__(1)
-    #print("train_ds: ", train_ds)
-    #for i in train_ds:
-     #   print(i)
-
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
 
-
-
-
-    # Train
-    print("Train")
-
-
-
-    # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-
-
-
-    # use amp to accelerate training
-
-
-    experiment_name = 'testexperiment'
+    # If new experiment creates an experiment directory
     if os.path.isdir(experiment_name):
 
-        if len(os.listdir(experiment_name)) > 0:
+        if not os.path.isdir(os.path.join(experiment_name,'weights')):
+            print("experiment dir exist without without weights folder. STRANGE!")
+            os.makedirs(os.path.join(experiment_name,'weights'))
 
-            start_epoch = np.max(np.array([int(mf.split(".")[0]) for mf in os.listdir(experiment_name)]))
-            model = _load_model(os.path.join(experiment_name,str(start_epoch)+'.npz'), device)
+
+        if len(os.listdir(os.path.join(experiment_name,'weights'))) > 0:
+
+            latest_model = np.max(np.array([int(mf.split(".")[0]) for mf in os.listdir(os.path.join(experiment_name,'weights'))]))
+            model = _load_model(os.path.join(experiment_name,'weights',str(latest_model)+'.npz'), device)
+            start_epoch = (latest_model+1)
         else:
             start_epoch = 0
             model = _compile_model(device)
@@ -143,6 +97,8 @@ def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldat
 
     else:
         os.makedirs(experiment_name)
+        os.makedirs(os.path.join(experiment_name, 'weights'))
+        os.makedirs(os.path.join(experiment_name, 'validations'))
         start_epoch = 0
         model = _compile_model(device)
 
@@ -167,6 +123,7 @@ def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldat
                 batch_data["image"].to(device),
                 batch_data["label"].to(device),
             )
+
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
                 outputs = model(inputs)
@@ -180,67 +137,23 @@ def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldat
                 f", train_loss: {loss.item():.4f}"
                 f", step time: {(time.time() - step_start):.4f}"
             )
-        _save_model(model, os.path.join(experiment_name,str(epoch)))
+        _save_model(model, os.path.join(experiment_name,'weights',str(epoch)))
 
 
     print("Model training done!")
 
 
-def validate(model_path, data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata'):
+def validate_model(model, val_loader, device):
 
 
 
-    with open('client_settings.yaml', 'r') as fh: # CJG change
 
-        try:
-            client_settings = dict(yaml.safe_load(fh))
-        except yaml.YAMLError as e:
-            raise
-    batch_size = client_settings['batch_size']
-
-    device = torch.device("cuda:0")
-
-    # Load data
-
-    val_transform = Compose(
-        [
-            LoadImaged(keys=["image", "label"]),
-            EnsureChannelFirstd(keys="image"),
-            EnsureTyped(keys=["image", "label"]),
-            ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-            Orientationd(keys=["image", "label"], axcodes="RAS"),
-            Spacingd(
-                keys=["image", "label"],
-                pixdim=(1.0, 1.0, 1.0),
-                mode=("bilinear", "nearest"),
-            ),
-            NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-        ]
-    )
-
-    # image_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'images'))
-    # label_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'labels'))
-    image_files = [os.path.join('val', 'images', i) for i in
-                   os.listdir(os.path.join(data_path, 'val', 'images'))]  # Changed by CJG to local data
-    label_files = [os.path.join('val', 'labels', i) for i in
-                   os.listdir(os.path.join(data_path, 'val', 'labels'))]  # Changed by CJG to local data
-
-    #print("val files:")
-    #for r in image_files:
-    #    print(r)
-
-    val_ds = BratsDataset(root_dir=data_path, transform=val_transform, image_files=image_files,
-                          label_files=label_files)
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=4)
-
-    #model = _compile_model(device)
-    model = _load_model(model_path, device)
     # use amp to accelerate training
     scaler = torch.cuda.amp.GradScaler()
     # enable cuDNN benchmark
     torch.backends.cudnn.benchmark = True
     post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
-    dice_metric = DiceMetric(include_background=True, reduction="mean")
+    dice_metric = DiceMetric(include_background=False, reduction="mean")
     dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
     model.eval()
     with torch.no_grad():
@@ -278,21 +191,65 @@ def validate(model_path, data_path='/home/mattias/Documents/projects/brats_datas
         print(k, ": ", results[k])
 
 
-
+    print("--")
     return results
 
 
     # Save JSON
 
-def validate_all(modelname, data_path):
+def validate(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata',
+             experiment_name='testexperiment'):
 
+    with open('client_settings.yaml', 'r') as fh: # CJG change
 
-    path = 'validations'
-    if not os.path.isdir(path):
-        os.makedirs(path)
+        try:
+            client_settings = dict(yaml.safe_load(fh))
+        except yaml.YAMLError as e:
+            raise
+
+    device = torch.device("cuda:0")
+
+    # Load data
+    image_files = [os.path.join('images', i) for i in
+                   os.listdir(os.path.join(data_path, 'images'))]
+    label_files = [os.path.join('labels', i) for i in
+                   os.listdir(os.path.join(data_path, 'labels'))]
+
+    val_ds = BratsDataset(root_dir=data_path, transform=get_val_transform(), image_files=image_files,
+                          label_files=label_files)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=4)
+
+    if 'dataname' in client_settings and client_settings['dataname'] != '':
+        validation_name = client_settings['dataname']
+    else:
+        validation_name = "_".join(data_path.split("/"))
+
     results = {}
-    for model in os.listdir(modelname):
-        results[model.split(".")[0]] = validate(os.path.join(modelname,model))
+    tic = time.time()
+    if os.path.isfile(os.path.join(experiment_name, 'validations',validation_name)):
+        print("validation on experiment and data exists.")
+        print("Checking for experiment updates (new training)")
+
+        results = json.load(open(os.path.join(experiment_name, 'validations',validation_name)))
+        prev_rounds = [r + ".npz" for r in list(results.keys())]
+        print("prev rounds ", prev_rounds)
+        current_rounds = os.listdir(os.path.join(experiment_name, 'weights'))
+        print("current rounds: ", current_rounds)
+        model_states_to_validate = list(set(current_rounds) - set(prev_rounds))
+        print("modelstate updates: ", model_states_to_validate)
+    else:
+        model_states_to_validate = os.listdir(os.path.join(experiment_name, 'weights'))
+
+
+    for model_path in model_states_to_validate:
+        model = _load_model(os.path.join(experiment_name, 'weights', model_path), device)
+
+        results[model_path.split(".")[0]] = validate_model(model, val_loader, device)
+        print("validation time: ", time.time()-tic)
+        tic = time.time()
+    with open(os.path.join(experiment_name, 'validations',validation_name), 'w') as outfile:
+        json.dump(results, outfile)
+
 
 def _save_model(model, out_path):
 
@@ -300,6 +257,7 @@ def _save_model(model, out_path):
     weights_np = collections.OrderedDict()
     for w in weights:
         weights_np[w] = weights[w].cpu().detach().numpy()
+    print("saving: ", out_path)
     np.savez_compressed(out_path, **weights_np)
 
 
@@ -324,5 +282,5 @@ if __name__ == '__main__':
 
         'train': train,
         'validate': validate,
-        'validateall': validate_all
+        'validatemodel': validate_model
     })

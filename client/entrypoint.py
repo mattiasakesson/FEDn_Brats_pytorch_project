@@ -4,6 +4,7 @@ import sys
 import fire
 import yaml
 import json
+from icecream import ic
 
 from fedn.utils.helpers import get_helper, save_metadata, save_metrics
 #from fedn.utils.helpers import get_helper
@@ -50,6 +51,75 @@ from monai.utils import set_determinism
 import torch
 from collections import OrderedDict
 HELPER_MODULE = 'pytorchhelper'
+
+class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
+    """
+    Convert labels to multi channels based on brats classes:
+    label 1 is the peritumoral edema
+    label 2 is the GD-enhancing tumor
+    label 3 is the necrotic and non-enhancing tumor core
+    The possible classes are TC (Tumor core), WT (Whole tumor)
+    and ET (Enhancing tumor).
+
+    """
+
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.keys:
+            result = []
+            result.append(d[key] == 0)
+            result.append(d[key] == 1)
+            result.append(d[key] == 2)
+            result.append(d[key] == 3)
+            d[key] = torch.stack(result, axis=0).float()
+        return d
+
+def get_train_transform():
+    train_transform = Compose(
+            [
+                # load 4 Nifti images and stack them together
+                LoadImaged(keys=["image", "label"]),
+                EnsureChannelFirstd(keys="image"),
+                EnsureTyped(keys=["image", "label"]),
+                ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
+                Orientationd(keys=["image", "label"], axcodes="RAS"),
+                Spacingd(
+                    keys=["image", "label"],
+                    pixdim=(1.0, 1.0, 2.0),
+                    mode=("bilinear", "nearest"),
+                ),
+                RandSpatialCropd(keys=["image", "label"], roi_size=[160, 160, 80], random_size=False),
+                RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
+                RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
+                RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
+                NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+                RandScaleIntensityd(keys="image", factors=0.1, prob=0.5),
+                RandShiftIntensityd(keys="image", offsets=0.1, prob=0.5),
+                RandRotated(keys=["image", "label"], prob = 0.25, range_x = 30, range_y = 30, range_z = 30, mode = ("bilinear", "nearest")),
+                Rand3DElasticd(keys=["image", "label"], sigma_range=(5,7), magnitude_range=(50,150), prob = 0.5, padding_mode='zeros', mode = ("bilinear", "nearest")),
+            ]
+        )
+    return train_transform
+
+def get_val_transform():
+
+    val_transform = Compose(
+            [
+                LoadImaged(keys=["image", "label"]),
+                EnsureChannelFirstd(keys="image"),
+                EnsureTyped(keys=["image", "label"]),
+                ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
+                Orientationd(keys=["image", "label"], axcodes="RAS"),
+                Spacingd(
+                    keys=["image", "label"],
+                    pixdim=(1.0, 1.0, 2.0),
+                    mode=("bilinear", "nearest"),
+                ),
+                NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+            ]
+        )
+    return val_transform
+
 
 def init_seed(out_path='seed.npz', device=None):
     # Init and save
@@ -116,13 +186,9 @@ def _compile_model(device=None):
     return model
 
 
-def train(in_model_path, out_model_path, data_path='/var/data'): 
+def train(in_model_path, out_model_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml'):
 
-    #Uncomment for client specific settings
-
-
-    with open('/var/client_settings.yaml', 'r') as fh:
-    #with open('client_settings.yaml', 'r') as fh: # Used by CJG for local training
+    with open(client_settings_path, 'r') as fh: # Used by CJG for local training
 
         try:
             client_settings = dict(yaml.safe_load(fh))
@@ -134,59 +200,19 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
     device = torch.device("cuda:0")
 
     # Load data
-    train_transform = Compose(
-        [
-            # load 4 Nifti images and stack them together
-            LoadImaged(keys=["image", "label"]),
-            EnsureChannelFirstd(keys="image"),
-            EnsureTyped(keys=["image", "label"]),
-            ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-            Orientationd(keys=["image", "label"], axcodes="RAS"),
-            Spacingd(
-                keys=["image", "label"],
-                pixdim=(1.0, 1.0, 2.0),
-                mode=("bilinear", "nearest"),
-            ),
-            RandSpatialCropd(keys=["image", "label"], roi_size=[160, 160, 80], random_size=False),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
-            RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
-            NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-            RandScaleIntensityd(keys="image", factors=0.1, prob=0.5),
-            RandShiftIntensityd(keys="image", offsets=0.1, prob=0.5),
-            RandRotated(keys=["image", "label"], prob = 0.25, range_x = 30, range_y = 30, range_z = 30, mode = ("bilinear", "nearest")),
-            Rand3DElasticd(keys=["image", "label"], sigma_range=(5,7), magnitude_range=(50,150), prob = 0.5, padding_mode='zeros', mode = ("bilinear", "nearest")),
-        ]
-    )
-
-    #image_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'images'))
-    #label_files = get_clients([client_settings['training_dataset']], os.path.join(data_path, 'labels'))
     image_files = [os.path.join('train', 'images', i) for i in os.listdir(os.path.join(data_path, 'train', 'images'))] # Changed by CJG to local data
     label_files = [os.path.join('train', 'labels', i) for i in os.listdir(os.path.join(data_path, 'train', 'labels'))] # Changed by CJG to local data
-    
 
-    print("image_files:")
-    for r in image_files:
-        print(r, os.path.isfile(r))
-
-    print("label_files:")
-    for r in label_files:
-        print(r, os.path.isfile(r))
-    print("-- -- -- --")
-
-    print("data path: ", data_path)
     train_ds = BratsDataset(root_dir=data_path,
-                            transform=train_transform,
+                            transform=get_train_transform(),
                             image_files=image_files,
                             label_files=label_files)
 
-
-
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=12)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
 
     print("Load model")
     # Load model
-    model= _load_model(in_model_path, device)
+    model = _load_model(in_model_path, device)
     # use amp to accelerate training
     scaler = torch.cuda.amp.GradScaler()
     # enable cuDNN benchmark
@@ -247,12 +273,10 @@ def train(in_model_path, out_model_path, data_path='/var/data'):
 
 
 
-def validate(in_model_path, out_json_path, data_path='/var/data'):
+def validate(in_model_path, out_json_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml'):
 
 
-    with open('/var/client_settings.yaml', 'r') as fh:
-    #with open('client_settings.yaml', 'r') as fh: # CJG change
-
+    with open(client_settings_path, 'r') as fh:
         try:
             client_settings = dict(yaml.safe_load(fh))
         except yaml.YAMLError as e:
@@ -262,31 +286,12 @@ def validate(in_model_path, out_json_path, data_path='/var/data'):
     device = torch.device("cuda:0")
 
     # Load data
-
-    val_transform = Compose(
-        [
-            LoadImaged(keys=["image", "label"]),
-            EnsureChannelFirstd(keys="image"),
-            EnsureTyped(keys=["image", "label"]),
-            ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-            Orientationd(keys=["image", "label"], axcodes="RAS"),
-            Spacingd(
-                keys=["image", "label"],
-                pixdim=(1.0, 1.0, 2.0),
-                mode=("bilinear", "nearest"),
-            ),
-            NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-        ]
-    )
-
-    #image_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'images'))
-    #label_files = get_clients([client_settings['validation_dataset']], os.path.join(data_path, 'labels'))
     image_files = [os.path.join('val', 'images', i) for i in os.listdir(os.path.join(data_path, 'val', 'images'))] # Changed by CJG to local data
     label_files = [os.path.join('val', 'labels', i) for i in os.listdir(os.path.join(data_path, 'val', 'labels'))] # Changed by CJG to local data
 
         
 
-    val_ds = BratsDataset(root_dir=data_path, transform=val_transform, image_files=image_files,
+    val_ds = BratsDataset(root_dir=data_path, transform=get_val_transform(), image_files=image_files,
                           label_files=label_files)
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=4)
 
@@ -356,27 +361,6 @@ class ConvertToMultiChannelBasedOnBratsClassesd_old(MapTransform):
         return d
 
 
-class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
-    """
-    Convert labels to multi channels based on brats classes:
-    label 1 is the peritumoral edema
-    label 2 is the GD-enhancing tumor
-    label 3 is the necrotic and non-enhancing tumor core
-    The possible classes are TC (Tumor core), WT (Whole tumor)
-    and ET (Enhancing tumor).
-
-    """
-
-    def __call__(self, data):
-        d = dict(data)
-        for key in self.keys:
-            result = []
-            result.append(d[key] == 0)
-            result.append(d[key] == 1)
-            result.append(d[key] == 2)
-            result.append(d[key] == 3)
-            d[key] = torch.stack(result, axis=0).float()
-        return d
 
 
 class BratsDataset(Dataset):
@@ -396,14 +380,14 @@ class BratsDataset(Dataset):
 
             self.image_files = sorted(os.listdir(self.image_dir))
             self.label_files = sorted(os.listdir(self.label_dir))
-        #for ir, lr in zip(self.image_files, self.label_files):
-        #    print(ir, " - ", lr)
+
         assert len(self.image_files) == len(self.label_files), "Number of image files and label files do not match."
 
     def __len__(self):
         return len(self.image_files)
 
     def __getitem__(self, idx):
+
         if torch.is_tensor(idx):
             idx = idx.tolist()
         image_file = os.path.join(self.image_dir, self.image_files[idx])
