@@ -4,10 +4,8 @@ import sys
 import fire
 import yaml
 import json
-from icecream import ic
 
 from fedn.utils.helpers import get_helper, save_metadata, save_metrics
-#from fedn.utils.helpers import get_helper
 
 import collections
 import os
