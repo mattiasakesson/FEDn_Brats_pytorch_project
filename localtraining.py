@@ -63,6 +63,7 @@ def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldat
 
     batch_size = client_settings['batch_size']
     epochs = client_settings['epochs']
+    experiment_name = client_settings['experiment_name']
     device = torch.device("cuda:0")
 
     image_files = [os.path.join('images', i) for i in
