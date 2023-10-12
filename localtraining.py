@@ -51,8 +51,7 @@ from monai.utils import set_determinism
 import torch
 
 
-def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata/train',
-          experiment_name='testexperiment'):
+def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata/train'):
 
     with open('client_settings.yaml', 'r') as fh:
 
@@ -198,8 +197,7 @@ def validate_model(model, val_loader, device):
 
     # Save JSON
 
-def validate(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata',
-             experiment_name='testexperiment'):
+def validate(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata'):
 
     with open('client_settings.yaml', 'r') as fh: # CJG change
 
@@ -209,6 +207,8 @@ def validate(data_path='/home/mattias/Documents/projects/brats_datasets/hospital
             raise
 
     device = torch.device("cuda:0")
+    experiment_name = client_settings['experiment_name']
+
 
     # Load data
     image_files = [os.path.join('images', i) for i in
