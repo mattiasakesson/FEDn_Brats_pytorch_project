@@ -51,7 +51,7 @@ from monai.utils import set_determinism
 import torch
 
 
-def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata/train'):
+def train(data_path):
 
     with open('client_settings.yaml', 'r') as fh:
 
@@ -64,18 +64,55 @@ def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldat
     epochs = client_settings['epochs']
     experiment_name = client_settings['experiment_name']
     device = torch.device("cuda:0")
+    bratsdatatest = client_settings['bratsdatatest']
 
+    if bratsdatatest:
+        num_workers = 4
+    else:
+        num_workers = 12
+
+    # Train data
     image_files = [os.path.join('images', i) for i in
                    os.listdir(os.path.join(data_path, 'images'))]  # Changed by CJG to local data
     label_files = [os.path.join('labels', i) for i in
                    os.listdir(os.path.join(data_path, 'labels'))]  # Changed by CJG to local data
 
     train_ds = BratsDataset(root_dir=data_path,
-                            transform=get_train_transform(),
+                            transform=get_train_transform(bratsdatatest),
                             image_files=image_files,
                             label_files=label_files)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+
+    # Load data
+    if client_settings['validate_during_training']:
+
+        if client_settings['validation_data'] != '':
+            validation_data = client_settings['validation_data']
+        else:
+            validation_data = os.path.join("/".join(data_path.split("/")[:-1]),'val')
+
+        print("validation data: ", validation_data)
+
+        image_files = [os.path.join('images', i) for i in
+                       os.listdir(os.path.join(validation_data, 'images'))]
+        label_files = [os.path.join('labels', i) for i in
+                       os.listdir(os.path.join(validation_data, 'labels'))]
+
+        val_ds = BratsDataset(root_dir=validation_data, transform=get_val_transform(bratsdatatest), image_files=image_files,
+                              label_files=label_files)
+        val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=num_workers)
+
+        if 'validation_name' in client_settings and client_settings['validation_name'] != '':
+            validation_name = client_settings['validation_name']
+        else:
+            validation_name = "_".join(validation_data.split("/"))
+        print("validation name: ", validation_name)
+        results = {}
+        if os.path.isfile(os.path.join(experiment_name, 'validations', validation_name)):
+            print("Found previous validation results.")
+            results = json.load(open(os.path.join(experiment_name, 'validations', validation_name)))
+
 
     # If new experiment creates an experiment directory
     if os.path.isdir(experiment_name):
@@ -138,6 +175,13 @@ def train(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldat
                 f", step time: {(time.time() - step_start):.4f}"
             )
         _save_model(model, os.path.join(experiment_name,'weights',str(epoch)))
+        if validation_data:
+
+            results[str(epoch)] = validate_model(model, val_loader, device)
+
+            # Save validation results after each epoch to prevent scenarios when user interrupt training before end.
+            with open(os.path.join(experiment_name, 'validations', validation_name), 'w') as outfile:
+                json.dump(results, outfile)
 
 
     print("Model training done!")
@@ -147,7 +191,7 @@ def validate_model(model, val_loader, device):
 
 
 
-
+    print("Validation model")
     # use amp to accelerate training
     scaler = torch.cuda.amp.GradScaler()
     # enable cuDNN benchmark
@@ -190,14 +234,12 @@ def validate_model(model, val_loader, device):
     for k in results:
         print(k, ": ", results[k])
 
-
     print("--")
     return results
 
 
-    # Save JSON
 
-def validate(data_path='/home/mattias/Documents/projects/brats_datasets/hospitaldata'):
+def validate(data_path):
 
     with open('client_settings.yaml', 'r') as fh: # CJG change
 
@@ -208,7 +250,12 @@ def validate(data_path='/home/mattias/Documents/projects/brats_datasets/hospital
 
     device = torch.device("cuda:0")
     experiment_name = client_settings['experiment_name']
+    bratsdatatest = client_settings['bratsdatatest']
 
+    if bratsdatatest:
+        num_workers=4
+    else:
+        num_workers=12
 
     # Load data
     image_files = [os.path.join('images', i) for i in
@@ -216,12 +263,12 @@ def validate(data_path='/home/mattias/Documents/projects/brats_datasets/hospital
     label_files = [os.path.join('labels', i) for i in
                    os.listdir(os.path.join(data_path, 'labels'))]
 
-    val_ds = BratsDataset(root_dir=data_path, transform=get_val_transform(), image_files=image_files,
+    val_ds = BratsDataset(root_dir=data_path, transform=get_val_transform(bratsdatatest), image_files=image_files,
                           label_files=label_files)
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=4)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=num_workers)
 
-    if 'dataname' in client_settings and client_settings['dataname'] != '':
-        validation_name = client_settings['dataname']
+    if 'validation_name' in client_settings and client_settings['validation_name'] != '':
+        validation_name = client_settings['validation_name']
     else:
         validation_name = "_".join(data_path.split("/"))
 

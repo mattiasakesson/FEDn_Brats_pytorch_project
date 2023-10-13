@@ -72,7 +72,13 @@ class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
             d[key] = torch.stack(result, axis=0).float()
         return d
 
-def get_train_transform():
+def get_train_transform(bratsdatatest=False):
+
+    if bratsdatatest:
+        pixdim = (1.0, 1.0, 1.0)
+    else:
+        pixdim = (1.0, 1.0, 2.0)
+
     train_transform = Compose(
             [
                 # load 4 Nifti images and stack them together
@@ -83,7 +89,7 @@ def get_train_transform():
                 Orientationd(keys=["image", "label"], axcodes="RAS"),
                 Spacingd(
                     keys=["image", "label"],
-                    pixdim=(1.0, 1.0, 2.0),
+                    pixdim=pixdim,
                     mode=("bilinear", "nearest"),
                 ),
                 RandSpatialCropd(keys=["image", "label"], roi_size=[160, 160, 80], random_size=False),
@@ -99,7 +105,12 @@ def get_train_transform():
         )
     return train_transform
 
-def get_val_transform():
+def get_val_transform(bratsdatatest=False):
+
+    if bratsdatatest:
+        pixdim = (1.0, 1.0, 1.0)
+    else:
+        pixdim = (1.0, 1.0, 2.0)
 
     val_transform = Compose(
             [
@@ -110,7 +121,7 @@ def get_val_transform():
                 Orientationd(keys=["image", "label"], axcodes="RAS"),
                 Spacingd(
                     keys=["image", "label"],
-                    pixdim=(1.0, 1.0, 2.0),
+                    pixdim=pixdim,
                     mode=("bilinear", "nearest"),
                 ),
                 NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),

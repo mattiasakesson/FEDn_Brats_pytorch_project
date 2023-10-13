@@ -8,3 +8,7 @@ validation_dataset: 'TCGA_14'
 epochs: 3
 experiment_name: 'ScaleoutExperiment'
 dataname: ''
+validation_name: ''
+validate_during_training: True
+validation_data: ''
+bratsdatatest: False
