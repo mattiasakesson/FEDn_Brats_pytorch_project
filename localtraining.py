@@ -51,7 +51,7 @@ from monai.utils import set_determinism
 import torch
 
 
-def train(data_path):
+def train(data_path=None):
 
     with open('client_settings.yaml', 'r') as fh:
 
@@ -65,6 +65,11 @@ def train(data_path):
     experiment_name = client_settings['experiment_name']
     device = torch.device("cuda:0")
     bratsdatatest = client_settings['bratsdatatest']
+
+    if not data_path:
+        print("datapath not defined")
+        data_path = client_settings['training_data']
+    print("data_path: ", data_path)
 
     if bratsdatatest:
         num_workers = 4
@@ -89,8 +94,8 @@ def train(data_path):
 
         if client_settings['validation_data'] != '':
             validation_data = client_settings['validation_data']
-        else:
-            validation_data = os.path.join("/".join(data_path.split("/")[:-1]),'val')
+        #else:
+         #   validation_data = os.path.join("/".join(data_path.split("/")[:-1]),'val')
 
         print("validation data: ", validation_data)
 
@@ -175,7 +180,7 @@ def train(data_path):
                 f", step time: {(time.time() - step_start):.4f}"
             )
         _save_model(model, os.path.join(experiment_name,'weights',str(epoch)))
-        if validation_data:
+        if client_settings['validate_during_training']:
 
             results[str(epoch)] = validate_model(model, val_loader, device)
 
@@ -200,10 +205,12 @@ def validate_model(model, val_loader, device):
     dice_metric = DiceMetric(include_background=False, reduction="mean")
     dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
     model.eval()
+    step = 0
     with torch.no_grad():
 
         for val_data in val_loader:
 
+            step += 1
             val_inputs, val_labels = (
                 val_data["image"].to(device),
                 val_data["label"].to(device),
@@ -212,6 +219,9 @@ def validate_model(model, val_loader, device):
             val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
             dice_metric(y_pred=val_outputs, y=val_labels)
             dice_metric_batch(y_pred=val_outputs, y=val_labels)
+            print(
+                f"{step}/{len(val_loader.dataset) // val_loader.batch_size}")
+
 
         metric = dice_metric.aggregate().item()
         metric_batch = dice_metric_batch.aggregate()
@@ -291,12 +301,14 @@ def validate(data_path):
 
     for model_path in model_states_to_validate:
         model = _load_model(os.path.join(experiment_name, 'weights', model_path), device)
-
+        print("Validating model: ", model_path)
         results[model_path.split(".")[0]] = validate_model(model, val_loader, device)
         print("validation time: ", time.time()-tic)
         tic = time.time()
-    with open(os.path.join(experiment_name, 'validations',validation_name), 'w') as outfile:
-        json.dump(results, outfile)
+
+        with open(os.path.join(experiment_name, 'validations',validation_name), 'w') as outfile:
+            json.dump(results, outfile)
+        print("saving time: ", time.time() - tic)
 
 
 def _save_model(model, out_path):
