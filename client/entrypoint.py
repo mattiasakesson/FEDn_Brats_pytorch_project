@@ -194,7 +194,7 @@ def _compile_model(device=None):
 def train(in_model_path, out_model_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml'):
 
 
-    print("Training entrypoint starts: we are here: ", os.getcwd())
+    print("Training entrypoint starts")
     with open(client_settings_path, 'r') as fh: # Used by CJG for local training
 
         try:
@@ -241,12 +241,14 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
     optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
 
     # if optimizer parameters exists then load them
-    if os.path.isfile('/var/checkpoint.pth'):
-        checkpoint = torch.load('/var/checkpoint.pth')
+    if os.path.isfile(client_settings['checkpoint_path']):
+        checkpoint = torch.load(client_settings['checkpoint_path'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         print("optimizer parameters loaded")
 
     # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+    model.state_dict()
 
     total_start = time.time()
     for epoch in range(local_epochs):
@@ -272,6 +274,15 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
                 outputs = model(inputs)
                 loss = loss_function(outputs, labels)
             scaler.scale(loss).backward()
+            print("model shape: ", model.state_dict()['convInit.conv.weight'].shape)
+            print("optimizer shape: ", optimizer.param_groups[0]['params'][0].shape)
+            print("device: ", device)
+            print("loss: ", loss)
+
+            #for i, (name, param) in enumerate(model.named_parameters()):
+            #    print(name, param.size(), " - ", optimizer.param_groups[0]['params'][i].shape)
+
+
             scaler.step(optimizer)
             scaler.update()
             epoch_loss += loss.item()
@@ -297,7 +308,7 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
     # Save optimizer parameters locally
     torch.save({
         'optimizer_state_dict': optimizer.state_dict(),
-    }, '/var/checkpoint.pth')
+    }, client_settings['checkpoint_path'])
 
     # Save
     _save_model(model, out_model_path)
