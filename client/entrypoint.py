@@ -5,7 +5,10 @@ import fire
 import yaml
 import json
 
-from fedn.utils.helpers import get_helper, save_metadata, save_metrics
+from fedn.utils.helpers.helpers import get_helper, save_metadata, save_metrics
+
+HELPER_MODULE = 'numpyhelper'
+helper = get_helper(HELPER_MODULE)
 
 import collections
 import os
@@ -48,7 +51,7 @@ from monai.utils import set_determinism
 
 import torch
 from collections import OrderedDict
-HELPER_MODULE = 'pytorchhelper'
+
 
 class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
     """
@@ -137,25 +140,20 @@ def init_seed(out_path='seed.npz', device=None):
 
 
 def _save_model(model, out_path):
-    weights = model.state_dict()
-    weights_np = collections.OrderedDict()
-    for w in weights:
-        weights_np[w] = weights[w].cpu().detach().numpy()
 
-    helper = get_helper(HELPER_MODULE)
-    helper.save(weights_np, out_path)
+    parameters_np = [val.cpu().numpy() for _, val in model.state_dict().items()]
+    helper.save(parameters_np, out_path)
 
 
 def _load_model(model_path, device=None):
 
-    helper = get_helper(HELPER_MODULE)
-    weights_np = helper.load(model_path)
-    weights = collections.OrderedDict()
-    for w in weights_np:
-        weights[w] = torch.tensor(weights_np[w])
-
+    parameters_np = helper.load(model_path)
     model = _compile_model(device)
-    model.load_state_dict(weights)
+    params_dict = zip(model.state_dict().keys(), parameters_np)
+    state_dict = collections.OrderedDict({key: torch.tensor(x) for key, x in params_dict})
+    model.load_state_dict(state_dict)
+
+
 
     return model
 
@@ -180,13 +178,11 @@ def inference(input, model):
 
 def _compile_model(device=None):
 
-
     # standard PyTorch program style: create SegResNet, DiceLoss and Adam optimizer
-
     model = SegResNet(
         blocks_down=[1, 2, 2, 4],
         blocks_up=[1, 1, 1],
-        init_filters=8,#16,
+        init_filters=16,
         in_channels=4,
         out_channels=4,
         dropout_prob=0.2,
@@ -197,6 +193,8 @@ def _compile_model(device=None):
 
 def train(in_model_path, out_model_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml'):
 
+
+    print("Training entrypoint starts: we are here: ", os.getcwd())
     with open(client_settings_path, 'r') as fh: # Used by CJG for local training
 
         try:
@@ -205,19 +203,30 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
             raise
     batch_size = client_settings['batch_size']
     local_epochs = client_settings['local_epochs']
+    data_path = client_settings['data_path']
 
     device = torch.device("cuda:0")
 
+    bratsdatatest = client_settings['bratsdatatest']
+    if bratsdatatest:
+        num_workers = 4
+    else:
+        num_workers = 12
+
+    print("")
     # Load data
     image_files = [os.path.join('train', 'images', i) for i in os.listdir(os.path.join(data_path, 'train', 'images'))] # Changed by CJG to local data
     label_files = [os.path.join('train', 'labels', i) for i in os.listdir(os.path.join(data_path, 'train', 'labels'))] # Changed by CJG to local data
 
     train_ds = BratsDataset(root_dir=data_path,
-                            transform=get_train_transform(),
+                            transform=get_train_transform(bratsdatatest),
                             image_files=image_files,
                             label_files=label_files)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    print("num workers: ", num_workers)
+    print("batch size: ", batch_size)
+
 
     print("Load model")
     # Load model
@@ -230,8 +239,14 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
 
     loss_function = DiceLoss(smooth_nr=0, smooth_dr=1e-5, squared_pred=True, to_onehot_y=False, sigmoid=True)
     optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
-    #lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
+    # if optimizer parameters exists then load them
+    if os.path.isfile('/var/checkpoint.pth'):
+        checkpoint = torch.load('/var/checkpoint.pth')
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        print("optimizer parameters loaded")
+
+    # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     total_start = time.time()
     for epoch in range(local_epochs):
@@ -251,6 +266,9 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
             )
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
+                print("inputs shape: ", inputs.shape)
+                print("labels shape: ", labels.shape)
+
                 outputs = model(inputs)
                 loss = loss_function(outputs, labels)
             scaler.scale(loss).backward()
@@ -276,14 +294,17 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
     # Save JSON metadata file
     save_metadata(metadata, out_model_path)
 
+    # Save optimizer parameters locally
+    torch.save({
+        'optimizer_state_dict': optimizer.state_dict(),
+    }, '/var/checkpoint.pth')
+
     # Save
     _save_model(model, out_model_path)
     print("Model training done!")
 
 
-
 def validate(in_model_path, out_json_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml'):
-
 
     with open(client_settings_path, 'r') as fh:
         try:
@@ -292,17 +313,23 @@ def validate(in_model_path, out_json_path, data_path='/var/data', client_setting
             raise
     batch_size = client_settings['batch_size']
 
+    bratsdatatest = client_settings['bratsdatatest']
+    if bratsdatatest:
+        num_workers = 4
+    else:
+        num_workers = 12
+
     device = torch.device("cuda:0")
+    data_path = client_settings['data_path']
 
     # Load data
     image_files = [os.path.join('val', 'images', i) for i in os.listdir(os.path.join(data_path, 'val', 'images'))] # Changed by CJG to local data
     label_files = [os.path.join('val', 'labels', i) for i in os.listdir(os.path.join(data_path, 'val', 'labels'))] # Changed by CJG to local data
 
-        
 
-    val_ds = BratsDataset(root_dir=data_path, transform=get_val_transform(), image_files=image_files,
+    val_ds = BratsDataset(root_dir=data_path, transform=get_val_transform(bratsdatatest), image_files=image_files,
                           label_files=label_files)
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=4)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=num_workers)
 
     model = _load_model(in_model_path, device)
     # use amp to accelerate training
