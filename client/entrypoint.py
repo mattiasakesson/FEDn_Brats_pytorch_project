@@ -16,7 +16,7 @@ import shutil
 import tempfile
 import time
 from torch.utils.data import Dataset
-from data_clients_brats2020 import get_clients
+#from data_clients_brats2020 import get_clients
 
 from monai.apps import DecathlonDataset
 from monai.config import print_config
@@ -77,6 +77,7 @@ class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
 
 def get_train_transform(bratsdatatest=False):
 
+    print("Using Innovia Augmentation settings with roi size: 256, 256, 120")
     if bratsdatatest:
         pixdim = (1.0, 1.0, 1.0)
     else:
@@ -95,17 +96,19 @@ def get_train_transform(bratsdatatest=False):
                     pixdim=pixdim,
                     mode=("bilinear", "nearest"),
                 ),
-                RandSpatialCropd(keys=["image", "label"], roi_size=[160, 160, 80], random_size=False),
+                RandSpatialCropd(keys=["image", "label"], roi_size=(256, 256, 120), random_size=False),
                 RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
                 RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
                 RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
                 NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-                RandScaleIntensityd(keys="image", factors=0.1, prob=0.5),
-                RandShiftIntensityd(keys="image", offsets=0.1, prob=0.5),
-                RandRotated(keys=["image", "label"], prob = 0.25, range_x = 30, range_y = 30, range_z = 30, mode = ("bilinear", "nearest")),
-                Rand3DElasticd(keys=["image", "label"], sigma_range=(5,7), magnitude_range=(50,150), prob = 0.5, padding_mode='zeros', mode = ("bilinear", "nearest")),
+                RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
+                RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
+
             ]
         )
+
+
+
     return train_transform
 
 def get_val_transform(bratsdatatest=False):
@@ -208,15 +211,24 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
     device = torch.device("cuda:0")
 
     bratsdatatest = client_settings['bratsdatatest']
-    if bratsdatatest:
-        num_workers = 4
-    else:
-        num_workers = 12
+
+    num_workers = client_settings['num_workers']
 
     print("")
+    print("client settings")
+    for s in client_settings:
+        print(s, ": ", client_settings[s])
+
     # Load data
     image_files = [os.path.join('train', 'images', i) for i in os.listdir(os.path.join(data_path, 'train', 'images'))] # Changed by CJG to local data
     label_files = [os.path.join('train', 'labels', i) for i in os.listdir(os.path.join(data_path, 'train', 'labels'))] # Changed by CJG to local data
+
+    print("image files")
+    for im in image_files:
+        print(os.path.join(data_path,im), " - ", os.path.isfile(os.path.join(data_path,im)))
+    print("label files")
+    for im in label_files:
+        print(os.path.join(data_path,im), " - ", os.path.isfile(os.path.join(data_path,im)))
 
     train_ds = BratsDataset(root_dir=data_path,
                             transform=get_train_transform(bratsdatatest),
@@ -329,7 +341,6 @@ def validate(in_model_path, out_json_path, data_path='/var/data', client_setting
         num_workers = 4
     else:
         num_workers = 12
-
     device = torch.device("cuda:0")
     data_path = client_settings['data_path']
 
