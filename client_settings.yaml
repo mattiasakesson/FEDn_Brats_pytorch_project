@@ -1,14 +1,6 @@
-
 batch_size: 1
 local_epochs: 1
-training_dataset: 'TCGA_14'
-validation_dataset: 'TCGA_14'
-
-# Local training setting
-epochs: 3
-experiment_name: 'ScaleoutExperiment'
-dataname: ''
-validation_name: ''
-validate_during_training: True
-validation_data: ''
 bratsdatatest: False
+data_path: /var/data
+checkpoint_path: 'checkpoint.pth' # '/var/checkpoint.pth'
+num_workers: 8
