@@ -9,7 +9,7 @@ from fedn.utils.helpers.helpers import get_helper, save_metadata, save_metrics
 
 HELPER_MODULE = 'numpyhelper'
 helper = get_helper(HELPER_MODULE)
-
+ROI_SIZE = [256, 256, 120] #[160, 160, 80]
 import collections
 import os
 import shutil
@@ -77,7 +77,7 @@ class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
 
 def get_train_transform(bratsdatatest=False):
 
-    print("Using Innovia Augmentation settings with roi size: 256, 256, 120")
+    print("Using Innovia Augmentation settings with roi size: ", ROI_SIZE)
     if bratsdatatest:
         pixdim = (1.0, 1.0, 1.0)
     else:
@@ -96,7 +96,7 @@ def get_train_transform(bratsdatatest=False):
                     pixdim=pixdim,
                     mode=("bilinear", "nearest"),
                 ),
-                RandSpatialCropd(keys=["image", "label"], roi_size=(256, 256, 120), random_size=False),
+                RandSpatialCropd(keys=["image", "label"], roi_size=ROI_SIZE, random_size=False),
                 RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
                 RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
                 RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
@@ -167,7 +167,7 @@ def inference(input, model):
     def _compute(input):
         return sliding_window_inference(
             inputs=input,
-            roi_size=(176, 176, 96),
+            roi_size=ROI_SIZE,
             sw_batch_size=1,
             predictor=model,
             overlap=0.5,
