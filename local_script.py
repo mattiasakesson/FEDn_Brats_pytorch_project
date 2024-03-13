@@ -1,12 +1,12 @@
-from client.entrypoint import train, validate
+from client.entrypoint import train, validate, init_seed
 import os
 import fire
 
 
 def validate_local():
 
-    model_folder = '/var/modelfolder'
-    result_folder = '/var/resultfolder'
+    model_folder = '/experiments/modelfolder'
+    result_folder = '/experiments/resultfolder'
 
     model_versions = [f for f in os.listdir(model_folder) if f.endswith('.npz')]
     print("model versions: ", model_versions)
@@ -26,9 +26,9 @@ def validate_local():
 
 def train_local():
 
-    model_folder = '/var/modelfolder'
+    model_folder = '/experiments/modelfolder'
 
-    in_model_path = '/var/seed.npz'
+    in_model_path = '/experiments/modelfolder/seed.npz'
     for epoch in range(100):
         print()
         print()
@@ -38,8 +38,17 @@ def train_local():
         train(in_model_path, out_model_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml')
         in_model_path = out_model_path
 
+def init_experiments():
+
+
+    os.mkdir('/experiments/modelfolder')
+    os.mkdir('/experiments/resultfolder')
+    init_seed(out_path='/experiments/modelfolder/seed.npz')
+
+
 if __name__ == '__main__':
     fire.Fire({
         'train': train_local,
         'validate': validate_local,
+        'init': init_experiments
     })
