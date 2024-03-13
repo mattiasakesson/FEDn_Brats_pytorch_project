@@ -72,27 +72,28 @@ Example: \
 
 
 # Local Training and Validation
-
-Update the client_setting.yaml:
-- epochs: A sufficient number (1000)
-- experiment_name: Name it related to your workplace/region
-- dataname: Name it related to your workplace/region
+NEW!
 
 
-If you need a virtual environment:
-```console
-bin/init_venv.sh
-```
-## Train
-```console
-.assist-pytorch-venv/bin/python3 localtraining.py train <PATH/TO/DATA>/train
-```
+## Train local
+docker run --gpus all --shm-size=32gb \
+-v <NEW/DATA/PATH>:/var/data \
+-v $PWD/client_settings.yaml:/var/client_settings.yaml \
+-v $PWD/client:/var/client \
+-v $PWD/local_script.py:/var/local_script.py \
+-v $PWD/experiments:/experiments \
+-e ENTRYPOINT_OPTS=--data_path=/var/data \
+mattiasakessons/bratspytorch /venv/bin/python  /var/local_script.py  train
 
-## Validate experiment
-```console
-.assist-pytorch-venv/bin/python3 localtraining.py validate <PATH/TO/DATA>/val
-```
-
+## Validate local
+docker run --gpus all --shm-size=32gb \
+-v <NEW/DATA/PATH>:/var/data \
+-v $PWD/client_settings.yaml:/var/client_settings.yaml \
+-v $PWD/client:/var/client \
+-v $PWD/local_script.py:/var/local_script.py \
+-v $PWD/experiments:/experiments \
+-e ENTRYPOINT_OPTS=--data_path=/var/data \
+mattiasakessons/bratspytorch /venv/bin/python  /var/local_script.py validate
 
 
 
