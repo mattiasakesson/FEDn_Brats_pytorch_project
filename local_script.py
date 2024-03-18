@@ -24,47 +24,41 @@ def validate_local():
         print("epoch: ", epoch)
         validate(model_path, result_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml')
 
-    print("result_folder")
-    for file in os.listdir(result_folder):
-        print("file: ", file)
+
     tar_filename = '/experiments/experiment_results_' + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + '.tar'
     with tarfile.open(tar_filename, 'w') as tar:
         # Add files to the archive
         for file in os.listdir(result_folder):
-            print("file: ", file)
+
             tar.add(os.path.join(result_folder,file))
 
 
 
-def train_local():
+def train_local(epochs=1000):
 
     in_model_path = '/experiments/mainseed.npz'
 
     print("init experiment")
     init_experiments()
 
-    for epoch in range(3):
+    for epoch in range(epochs):
         print()
         print()
         print("epoch: ", epoch)
-        print("list model_folder: ", os.listdir(model_folder))
+
         out_model_path = os.path.join(model_folder,str(epoch) + '.npz')
         train(in_model_path, out_model_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml')
         in_model_path = out_model_path
 
 def init_experiments():
 
-    print("list: ", os.listdir('/experiments'))
     if os.path.isdir(model_folder):
-        print("remove")
         shutil.rmtree(model_folder)
+
     if os.path.isdir(result_folder):
-        print("remove")
         shutil.rmtree(result_folder)
-    print("list: ", os.listdir('/experiments'))
 
     os.mkdir(model_folder)
-    #if not os.path.isdir(result_folder):
     os.mkdir(result_folder)
     #init_seed(out_path=os.path.join(model_folder, 'seed.npz'))
 
