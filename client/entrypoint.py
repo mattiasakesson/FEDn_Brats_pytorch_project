@@ -9,7 +9,7 @@ from fedn.utils.helpers.helpers import get_helper, save_metadata, save_metrics
 
 HELPER_MODULE = 'numpyhelper'
 helper = get_helper(HELPER_MODULE)
-ROI_SIZE = [256, 256, 120] #[160, 160, 80]
+ROI_SIZE = [256, 256, 120] #[160, 160, 80]#
 import collections
 import os
 import shutil
@@ -101,8 +101,8 @@ def get_train_transform(bratsdatatest=False):
                 RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
                 RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
                 NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-                RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
-                RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
+                RandScaleIntensityd(keys="image", factors=0.1, prob=0.5),
+                RandShiftIntensityd(keys="image", offsets=0.1, prob=0.5),
 
             ]
         )
