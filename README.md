@@ -82,6 +82,7 @@ docker run --gpus all --shm-size=32gb \
 -v $PWD/client:/var/client \
 -v $PWD/local_script.py:/var/local_script.py \
 -v $PWD/experiments:/experiments \
+-v $PWD/mainseed.npz:/experiments/mainseed.npz \
 -e ENTRYPOINT_OPTS=--data_path=/var/data \
 mattiasakessons/bratspytorch /venv/bin/python  /var/local_script.py  train
 
@@ -92,6 +93,7 @@ docker run --gpus all --shm-size=32gb \
 -v $PWD/client:/var/client \
 -v $PWD/local_script.py:/var/local_script.py \
 -v $PWD/experiments:/experiments \
+-v $PWD/mainseed.npz:/experiments/mainseed.npz \
 -e ENTRYPOINT_OPTS=--data_path=/var/data \
 mattiasakessons/bratspytorch /venv/bin/python  /var/local_script.py validate
 
