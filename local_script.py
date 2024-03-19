@@ -34,6 +34,17 @@ def validate_local():
 
 
 
+
+def cross_validation(model_folder2='/experiments/importedmodels', result_folder='/experiments/importedmodelsresults'):
+
+    if not os.listdir(result_folder):
+        os.mkdir(result_folder)
+    for m in os.listdir(model_folder2):
+        model_path = os.path.join(model_folder2,m)
+        result_path = os.path.join(result_folder,m+'_result')
+        validate(model_path, result_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml')
+
+
 def train_local(epochs=1000):
 
     in_model_path = '/experiments/mainseed.npz'
@@ -69,5 +80,6 @@ if __name__ == '__main__':
     fire.Fire({
         'train': train_local,
         'validate': validate_local,
-        'init': init_experiments
+        'init': init_experiments,
+        'cross_validation': cross_validation
     })
