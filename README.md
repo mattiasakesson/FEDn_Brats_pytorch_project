@@ -27,7 +27,7 @@ docker run --gpus all --shm-size=32gb \
 -v <NEW/DATA/PATH>:/var/data \
 -v $PWD/client_settings.yaml:/var/client_settings.yaml \
 -e ENTRYPOINT_OPTS=--data_path=/var/data/ \
-mattiasakessons/pytorchtest run client --secure=True --force-ssl -in client.yaml
+mattiasakessons/bratspytorch /venv/bin/fedn run client --secure=True --force-ssl -in client.yaml 
 ```
 
 ### Using singularity
