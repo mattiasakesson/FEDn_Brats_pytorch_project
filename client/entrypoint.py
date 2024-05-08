@@ -9,7 +9,7 @@ from fedn.utils.helpers.helpers import get_helper, save_metadata, save_metrics
 
 HELPER_MODULE = 'numpyhelper'
 helper = get_helper(HELPER_MODULE)
-ROI_SIZE = [256, 256, 120] #[160, 160, 80]#
+ROI_SIZE = [160, 160, 80]#[256, 256, 120] #
 import collections
 import os
 import shutil
@@ -196,7 +196,7 @@ def _compile_model(device=None):
 
 def train(in_model_path, out_model_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml'):
 
-
+    client_settings_path = os.environ['FEDN_CLIENT_SETTINGS']
     print("Training entrypoint starts")
     with open(client_settings_path, 'r') as fh: # Used by CJG for local training
 
@@ -329,6 +329,8 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
 
 def validate(in_model_path, out_json_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml'):
 
+    client_settings_path = os.environ['FEDN_CLIENT_SETTINGS']
+    print("client_settings_path: ", client_settings_path)
     with open(client_settings_path, 'r') as fh:
         try:
             client_settings = dict(yaml.safe_load(fh))
