@@ -11,12 +11,13 @@
 repo's basefolder.
 
 - Install fedn (recommending using a venv) and add this environment variables: 
-(Don't forget to add your data path instead of <DATA/PATH>)
+- Add your data path in the file: client_settings.yaml
+  
 ```console
 pip install fedn
 export FEDN_PACKAGE_EXTRACT_DIR=package
 export FEDN_AUTH_SCHEME=Token
-export FEDN_DATA_PATH=<DATA/PATH>
+export FEDN_CLIENT_SETTINGS=<ABSOLUTE-PATH-TO-THIS-REPO-FOLDER>/client_settings.yaml
 ```
 
 - Join the federation with this command:
