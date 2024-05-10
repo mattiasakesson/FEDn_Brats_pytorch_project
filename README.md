@@ -17,6 +17,7 @@ pip install fedn
 export FEDN_PACKAGE_EXTRACT_DIR=package
 export FEDN_AUTH_SCHEME=Token
 export FEDN_DATA_PATH=<DATA/PATH>
+export FEDN_CLIENT
 ```
 
 - Join the federation with this command:
