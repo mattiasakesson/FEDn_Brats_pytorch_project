@@ -4,8 +4,10 @@
 
 ## Conect client to federation
 
-- Start by cloning this repo
-
+- Start by cloning this repo and switch to branch fedn091:
+```console
+git checkout fedn091
+```
 
 - Make sure you have a correct client certificate for current federation (usually named client.yaml) and put it in this 
 repo's basefolder.
