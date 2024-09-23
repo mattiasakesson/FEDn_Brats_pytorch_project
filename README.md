@@ -1,7 +1,30 @@
-# FEDn Brats pytorch project
+# FEDn Brain Tumor Segmentation
 
-## Pre-process data
-YOU NEED TO HAVE THE BRATS_2020 DATASET ON YOUR MACHINE! ELSE CONTACT ANDERS. \
+
+
+## Connect client to federation
+ - Clone this repo (or create a workspace where you have the client-settings.yaml file) 
+ - Download a client cert from studio (client.yaml)
+ - Set the absolute path to the client_settings.yaml file as an environment variable named FEDN_CLIENT_SETTINGS:
+   ```console
+     export FEDN_CLIENT_SETTINGS=<ABSOLUTE-PATH-TO-THIS-REPO-FOLDER>/client_settings.yaml
+    ```
+- install fedn (recommending using a virtual environment):
+  ```console
+  pip install fedn==0.15.0
+  ```
+
+- connect client to studio:
+  ```console
+  fedn run client -in client.yaml --secure=True --force-ssl
+  ```
+  
+
+
+-------------------------------------------------
+## Using Brats 2000 dataset
+### Pre-process data
+YOU NEED TO HAVE THE BRATS_2020 DATASET ON YOUR MACHINE!  \
 Change: <PATH/TO/DATA> to the location you have your data and: <NEW/DATA/PATH>  to the location you wish to store the transformed data.
 
 
@@ -11,37 +34,12 @@ bin/init_venv.sh
 ```
 
 
-## Add client to federation
 
-make sure you have a correct client certificate for current federation (usully named client.yaml)
-
-### Using docker image
-
-Change <NEW/DATA/PATH> to the data path of your local data. \
-Make sure your client yaml file is named: client.yaml
-
-
-```console
-docker run --gpus all --shm-size=32gb \
--v $PWD/client.yaml:/app/client.yaml \
--v <NEW/DATA/PATH>:/var/data \
--v $PWD/client_settings.yaml:/var/client_settings.yaml \
--e ENTRYPOINT_OPTS=--data_path=/var/data/ \
-mattiasakessons/bratspytorch /venv/bin/fedn run client --secure=True --force-ssl -in client.yaml 
-```
-
-### Using singularity
-
-Transform the docker image into singularity
-
-```console
-singularity build bratspytorch.sif mattiasakessons/pytorchtest:latest
-```
 
 
 # Transform to locally collected hospital data
 
-## Data storing structure
+## Data structure
 
 - <DATA/PATH>
   - train
