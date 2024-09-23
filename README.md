@@ -5,6 +5,7 @@
 ## Connect client to federation
  - Clone this repo (or create a workspace where you have the client-settings.yaml file) 
  - Download a client cert from studio (client.yaml)
+ - Set the data path in client-settings.yaml
  - Set the absolute path to the client_settings.yaml file as an environment variable named FEDN_CLIENT_SETTINGS:
    ```console
      export FEDN_CLIENT_SETTINGS=<ABSOLUTE-PATH-TO-THIS-REPO-FOLDER>/client_settings.yaml
@@ -13,6 +14,7 @@
   ```console
   pip install fedn==0.15.0
   ```
+  
 
 - connect client to studio:
   ```console
