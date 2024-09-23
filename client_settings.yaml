@@ -1,6 +1,6 @@
 batch_size: 1
 local_epochs: 1
 bratsdatatest: False
-data_path: /var/data
-checkpoint_path: 'checkpoint.pth' # '/var/checkpoint.pth'
+data_path: "<DATA/PATH>"
+checkpoint_path: "checkpoint.pth" 
 num_workers: 8
