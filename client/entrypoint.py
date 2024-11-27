@@ -9,7 +9,10 @@ from fedn.utils.helpers.helpers import get_helper, save_metadata, save_metrics
 
 HELPER_MODULE = 'numpyhelper'
 helper = get_helper(HELPER_MODULE)
-ROI_SIZE = [256, 256, 120] #[160, 160, 80]#
+ROI_SIZE =[256, 256, 120] # [160, 160, 80]#
+MODEL_UPDATES = 25
+
+
 import collections
 import os
 import shutil
@@ -197,7 +200,9 @@ def _compile_model(device=None):
 def train(in_model_path, out_model_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml'):
 
 
+    client_settings_path = os.environ['FEDN_CLIENT_SETTINGS']
     print("Training entrypoint starts")
+    print("MODEL_UPDATES: ", MODEL_UPDATES)
     with open(client_settings_path, 'r') as fh: # Used by CJG for local training
 
         try:
@@ -214,21 +219,48 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
 
     num_workers = client_settings['num_workers']
 
-    print("")
-    print("client settings")
-    for s in client_settings:
-        print(s, ": ", client_settings[s])
+    if 'printouts' in client_settings:
+        printouts = client_settings['printouts']
+    else:
+        printouts = False
+
+    print("printouts: ", printouts)
+
+    if printouts:
+        print("")
+        print("client settings")
+        for s in client_settings:
+            print(s, ": ", client_settings[s])
 
     # Load data
-    image_files = [os.path.join('train', 'images', i) for i in os.listdir(os.path.join(data_path, 'train', 'images'))] # Changed by CJG to local data
-    label_files = [os.path.join('train', 'labels', i) for i in os.listdir(os.path.join(data_path, 'train', 'labels'))] # Changed by CJG to local data
+    image_files = sorted([os.path.join('train', 'images', i) for i in os.listdir(os.path.join(data_path, 'train', 'images'))]) # Changed by CJG to local data
+    label_files = sorted([os.path.join('train', 'labels', i) for i in os.listdir(os.path.join(data_path, 'train', 'labels'))]) # Changed by CJG to local data
 
-    print("image files")
-    for im in image_files:
-        print(os.path.join(data_path,im), " - ", os.path.isfile(os.path.join(data_path,im)))
-    print("label files")
-    for im in label_files:
-        print(os.path.join(data_path,im), " - ", os.path.isfile(os.path.join(data_path,im)))
+    data_size = len(image_files)
+
+    if os.path.isfile('unused_patients.npy'):
+
+        unused_patients = np.load('unused_patients.npy').tolist()
+        print("load unused patients: ", unused_patients)
+
+    else:
+
+        print("initiate unused patients")
+        unused_patients = []
+
+
+    sample_patients, unused_patients = sample_patient_fn(unused_patients, MODEL_UPDATES, list(np.arange(len(image_files))))
+
+    image_files = [image_files[sample] for sample in sample_patients]
+    label_files = [label_files[sample] for sample in sample_patients]
+
+    if printouts:
+        print("image files")
+        for im in image_files:
+            print(os.path.join(data_path,im), " - ", os.path.isfile(os.path.join(data_path,im)))
+        print("label files")
+        for im in label_files:
+            print(os.path.join(data_path,im), " - ", os.path.isfile(os.path.join(data_path,im)))
 
     train_ds = BratsDataset(root_dir=data_path,
                             transform=get_train_transform(bratsdatatest),
@@ -236,9 +268,6 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
                             label_files=label_files)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    print("num workers: ", num_workers)
-    print("batch size: ", batch_size)
-
 
     print("Load model")
     # Load model
@@ -265,8 +294,9 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
     total_start = time.time()
     for epoch in range(local_epochs):
         epoch_start = time.time()
-        print("-" * 10)
-        print(f"epoch {epoch + 1}/{local_epochs}")
+        if printouts:
+            print("-" * 10)
+            print(f"epoch {epoch + 1}/{local_epochs}")
         model.train()
         epoch_loss = 0
         step = 0
@@ -280,16 +310,18 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
             )
             optimizer.zero_grad()
             with torch.cuda.amp.autocast():
-                print("inputs shape: ", inputs.shape)
-                print("labels shape: ", labels.shape)
+                if printouts:
+                    print("inputs shape: ", inputs.shape)
+                    print("labels shape: ", labels.shape)
 
                 outputs = model(inputs)
                 loss = loss_function(outputs, labels)
             scaler.scale(loss).backward()
-            print("model shape: ", model.state_dict()['convInit.conv.weight'].shape)
-            print("optimizer shape: ", optimizer.param_groups[0]['params'][0].shape)
-            print("device: ", device)
-            print("loss: ", loss)
+            if printouts:
+                print("model shape: ", model.state_dict()['convInit.conv.weight'].shape)
+                print("optimizer shape: ", optimizer.param_groups[0]['params'][0].shape)
+                print("device: ", device)
+                print("loss: ", loss)
 
             #for i, (name, param) in enumerate(model.named_parameters()):
             #    print(name, param.size(), " - ", optimizer.param_groups[0]['params'][i].shape)
@@ -298,22 +330,23 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
             scaler.step(optimizer)
             scaler.update()
             epoch_loss += loss.item()
-            print(
-                f"{step}/{len(train_ds) // train_loader.batch_size}"
-                f", train_loss: {loss.item():.4f}"
-                f", step time: {(time.time() - step_start):.4f}"
-            )
+            if printouts:
+                print(
+                    f"{step}/{len(train_ds) // train_loader.batch_size}"
+                    f", train_loss: {loss.item():.4f}"
+                    f", step time: {(time.time() - step_start):.4f}"
+                )
 
     total_time = time.time() - total_start
 
     # Metadata needed for aggregation server side. DUMMY VALUES!
     metadata = {
-        'num_examples': len(train_ds),
+        'num_examples': data_size,
         'batch_size': 1,
         'epochs': 1,
         'lr': 0.001
     }
-
+    print("metadata: ", metadata)
     # Save JSON metadata file
     save_metadata(metadata, out_model_path)
 
@@ -325,10 +358,16 @@ def train(in_model_path, out_model_path, data_path='/var/data', client_settings_
     # Save
     _save_model(model, out_model_path)
     print("Model training done!")
+    print("saving unused_patients: ", unused_patients)
+    np.save('unused_patients.npy', unused_patients)
+    #with open('unused_patients.json', 'w') as file:
+    #    json.dump(unused_patients, file)
 
 
 def validate(in_model_path, out_json_path, data_path='/var/data', client_settings_path='/var/client_settings.yaml'):
 
+    client_settings_path = os.environ['FEDN_CLIENT_SETTINGS']
+    print("client_settings_path: ", client_settings_path)
     with open(client_settings_path, 'r') as fh:
         try:
             client_settings = dict(yaml.safe_load(fh))
@@ -344,14 +383,22 @@ def validate(in_model_path, out_json_path, data_path='/var/data', client_setting
     device = torch.device("cuda:0")
     data_path = client_settings['data_path']
 
+    if 'printouts' in client_settings:
+        printouts = client_settings['printouts']
+    else:
+        printouts = False
+
+
     # Load data
     image_files = [os.path.join('val', 'images', i) for i in os.listdir(os.path.join(data_path, 'val', 'images'))] # Changed by CJG to local data
-    label_files = [os.path.join('val', 'labels', i) for i in os.listdir(os.path.join(data_path, 'val', 'labels'))] # Changed by CJG to local data
+    label_files = [os.path.join('val', 'labels', i) for i in os.listdir(os.path.join(data_path, 'val', 'labels'))]# Changed by CJG to local data
+
 
 
     val_ds = BratsDataset(root_dir=data_path, transform=get_val_transform(bratsdatatest), image_files=image_files,
                           label_files=label_files)
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=num_workers)
+
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=num_workers)
 
     model = _load_model(in_model_path, device)
     # use amp to accelerate training
@@ -360,20 +407,42 @@ def validate(in_model_path, out_json_path, data_path='/var/data', client_setting
     torch.backends.cudnn.benchmark = True
     post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
     dice_metric = DiceMetric(include_background=False, reduction="mean")
+    dice_metric_rec = DiceMetric(include_background=False, reduction="mean")
     dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
+    dice_metric_batch_rec = DiceMetric(include_background=True, reduction="mean_batch")
+
+
+
+    patient_validations = {}
+
     model.eval()
     with torch.no_grad():
 
         for val_data in val_loader:
 
-            val_inputs, val_labels = (
+            val_inputs, val_labels, val_id = (
                 val_data["image"].to(device),
                 val_data["label"].to(device),
+                val_data["id"].to(device).cpu().numpy()[0]
             )
+
+
             val_outputs = inference(val_inputs, model)
             val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
             dice_metric(y_pred=val_outputs, y=val_labels)
             dice_metric_batch(y_pred=val_outputs, y=val_labels)
+            dice_metric_batch_rec.reset()
+            dice_metric_batch_rec(y_pred=val_outputs, y=val_labels)
+            dice_metric_rec.reset()
+            dice_metric_rec(y_pred=val_outputs, y=val_labels)
+            patient_val_update_mean = dice_metric.aggregate().item()
+            patient_val_update = dice_metric_batch_rec.aggregate()
+
+            patient_validations.update({f"Patient {val_id} meandice": patient_val_update_mean})
+            patient_validations.update({f"Patient {val_id} diceBackground": patient_val_update[0].item()})
+            patient_validations.update({f"Patient {val_id} diceGTV": patient_val_update[1].item()})
+            patient_validations.update({f"Patient {val_id} diceCTV": patient_val_update[2].item()})
+            patient_validations.update({f"Patient {val_id} diceBrainstem": patient_val_update[3].item()})
 
 
         metric = dice_metric.aggregate().item()
@@ -385,6 +454,7 @@ def validate(in_model_path, out_json_path, data_path='/var/data', client_setting
 
 
     results = {'meandice': metric, 'diceBackground': metric_bg, 'diceGTV': metric_GTV, 'diceCTV': metric_CTV, 'diceBrainstem': metric_Brainstem}
+    results.update(patient_validations)
     print("val results: ")
     for k in results:
         print(k, ": ", results[k])
@@ -429,15 +499,21 @@ class BratsDataset(Dataset):
         #self.label_dir = os.path.join(self.root_dir, "labels")
         self.image_dir = os.path.join(self.root_dir) #CJG
         self.label_dir = os.path.join(self.root_dir)#CJG
+
+
+
         if image_files and label_files:
 
-            #print("if")
+
             self.image_files = sorted(image_files)
             self.label_files = sorted(label_files)
+
+
         else:
 
             self.image_files = sorted(os.listdir(self.image_dir))
             self.label_files = sorted(os.listdir(self.label_dir))
+
 
         assert len(self.image_files) == len(self.label_files), "Number of image files and label files do not match."
 
@@ -455,8 +531,30 @@ class BratsDataset(Dataset):
 
         if self.transform:
             sample = self.transform(sample)
-
+        sample['id'] = idx
         return sample
+
+
+def sample_patient_fn(unused_patients, updates, patients):
+    sample_patients = []
+    if len(unused_patients) > updates:
+
+        sample_ind = np.random.choice(len(unused_patients), updates, replace=False)
+        sample_patients += [unused_patients[s] for s in sample_ind]
+        unused_patients = list(np.delete(unused_patients, sample_ind))
+
+    else:
+
+        sample_patients += unused_patients
+
+        while updates - len(sample_patients) >= len(patients):
+            sample_patients += patients
+
+        sample_ind = np.random.choice(len(patients), updates - len(sample_patients), replace=False)
+        sample_patients += [patients[s] for s in sample_ind]
+        unused_patients = list(np.delete(patients, sample_ind))
+
+    return sample_patients, unused_patients
 
 if __name__ == '__main__':
     fire.Fire({

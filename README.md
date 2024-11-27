@@ -1,45 +1,37 @@
+
 # FEDn Brain Tumor Segmentation
 
 
-
-## Connect client to federation
- - Clone this repo (or create a workspace where you have the client-settings.yaml file) 
- - Download a client cert from studio (client.yaml)
- - Set the data path in client-settings.yaml
- - Set the absolute path to the client_settings.yaml file as an environment variable named FEDN_CLIENT_SETTINGS:
-   ```console
-     export FEDN_CLIENT_SETTINGS=<ABSOLUTE-PATH-TO-THIS-REPO-FOLDER>/client_settings.yaml
-    ```
-- install fedn (recommending using a virtual environment):
-  ```console
-  pip install fedn==0.15.0
-  ```
-  
-
-- connect client to studio:
-  ```console
-  fedn run client -in client.yaml --secure=True --force-ssl
-  ```
-  
-
-
+ 
 -------------------------------------------------
-## Using Brats 2000 dataset
+Use real MRI data or play around with the Brats data set
+## Using Brats 2000 dataset (Optional play example)
 ### Pre-process data
 YOU NEED TO HAVE THE BRATS_2020 DATASET ON YOUR MACHINE!  \
 Change: <PATH/TO/DATA> to the location you have your data and: <NEW/DATA/PATH>  to the location you wish to store the transformed data.
 
 
+
+## Conect client to federation
+
+- Start by cloning this repo.
+
+
+-  Download a client cert from your studio project (client.yaml)
+
+- Install fedn (recommending using a venv) and add this environment variables: 
+- Add your data path in the file: client_settings.yaml
+  
 ```console
-bin/init_venv.sh
-.assist-pytorch-venv/bin/python bin/dataPrep.py transform <PATH/TO/DATA>/BRATS_2020/MICCAI_BraTS2020_TrainingData <NEW/DATA/PATH>
+pip install fedn
+export FEDN_CLIENT_SETTINGS=<ABSOLUTE-PATH-TO-THIS-REPO-FOLDER>/client_settings.yaml
 ```
 
+- Join the federation with this command:
+```console
+fedn client start -in client.yaml --secure=True --force-ssl
+```
 
-
-
-
-# Transform to locally collected hospital data
 
 ## Data structure
 
@@ -65,38 +57,10 @@ bin/init_venv.sh
 
 
 
-Name convention of sample pair should start with identifator in name. \
+Name convention of sample pair should start with identifier in name. \
 Example: \
 ../images/example23_image.nii.gz \
 ../labels/example23_label.nii.gz
-
-
-# Local Training and Validation
-NEW!
-
-
-## Train local
-docker run --gpus all --shm-size=32gb \
--v <NEW/DATA/PATH>:/var/data \
--v $PWD/client_settings.yaml:/var/client_settings.yaml \
--v $PWD/client:/var/client \
--v $PWD/local_script.py:/var/local_script.py \
--v $PWD/experiments:/experiments \
--v $PWD/mainseed.npz:/experiments/mainseed.npz \
--e ENTRYPOINT_OPTS=--data_path=/var/data \
-mattiasakessons/bratspytorch /venv/bin/python  /var/local_script.py  train
-
-## Validate local
-docker run --gpus all --shm-size=32gb \
--v <NEW/DATA/PATH>:/var/data \
--v $PWD/client_settings.yaml:/var/client_settings.yaml \
--v $PWD/client:/var/client \
--v $PWD/local_script.py:/var/local_script.py \
--v $PWD/experiments:/experiments \
--v $PWD/mainseed.npz:/experiments/mainseed.npz \
--e ENTRYPOINT_OPTS=--data_path=/var/data \
-mattiasakessons/bratspytorch /venv/bin/python  /var/local_script.py validate
-
 
 
 
