@@ -1,24 +1,29 @@
-# FEDn Brats pytorch project
+
+# FEDn Brain Tumor Segmentation
+
+
+ 
+-------------------------------------------------
+Use real MRI data or play around with the Brats data set
+## Using Brats 2000 dataset (Optional play example)
+### Pre-process data
+YOU NEED TO HAVE THE BRATS_2020 DATASET ON YOUR MACHINE!  \
+Change: <PATH/TO/DATA> to the location you have your data and: <NEW/DATA/PATH>  to the location you wish to store the transformed data.
 
 
 
 ## Conect client to federation
 
-- Start by cloning this repo and switch to branch fedn091:
-```console
-git checkout fedn091
-```
+- Start by cloning this repo.
 
-- Make sure you have a correct client certificate for current federation (usually named client.yaml) and put it in this 
-repo's basefolder.
+
+-  Download a client cert from your studio project (client.yaml)
 
 - Install fedn (recommending using a venv) and add this environment variables: 
 - Add your data path in the file: client_settings.yaml
   
 ```console
 pip install fedn
-export FEDN_PACKAGE_EXTRACT_DIR=package
-export FEDN_AUTH_SCHEME=Token
 export FEDN_CLIENT_SETTINGS=<ABSOLUTE-PATH-TO-THIS-REPO-FOLDER>/client_settings.yaml
 ```
 
@@ -27,9 +32,8 @@ export FEDN_CLIENT_SETTINGS=<ABSOLUTE-PATH-TO-THIS-REPO-FOLDER>/client_settings.
 fedn client start -in client.yaml --secure=True --force-ssl
 ```
 
-The running scripts will be running in a separate virtual environment located in a created folder named package with name: assist-venv
 
-## Data storing structure
+## Data structure
 
 - <DATA/PATH>
   - train
